@@ -4,6 +4,7 @@ import esphome.config_validation as cv
 from esphome.const import (
     CONF_ENABLE_IPV6,
     CONF_MIN_IPV6_ADDR_COUNT,
+    PLATFORM_BK72XX,
     PLATFORM_ESP32,
     PLATFORM_ESP8266,
     PLATFORM_RP2040,
@@ -23,10 +24,13 @@ CONFIG_SCHEMA = cv.Schema(
             esp8266=False,
             esp32=False,
             rp2040=False,
+            bk72xx=False,
         ): cv.All(
             cv.boolean,
             cv.Any(
-                cv.only_on([PLATFORM_ESP32, PLATFORM_ESP8266, PLATFORM_RP2040]),
+                cv.only_on(
+                    [PLATFORM_ESP32, PLATFORM_ESP8266, PLATFORM_RP2040, PLATFORM_BK72XX]
+                ),
                 cv.boolean_false,
             ),
         ),
@@ -53,3 +57,5 @@ async def to_code(config):
                 cg.add_build_flag("-DPIO_FRAMEWORK_ARDUINO_ENABLE_IPV6")
             if CORE.is_esp8266:
                 cg.add_build_flag("-DPIO_FRAMEWORK_ARDUINO_LWIP2_IPV6_LOW_MEMORY")
+            if CORE.is_bk72xx:
+                cg.add_build_flag("-DCONFIG_IPV6")
