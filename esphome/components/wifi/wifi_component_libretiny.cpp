@@ -14,6 +14,9 @@
 #include "esphome/core/hal.h"
 #include "esphome/core/application.h"
 #include "esphome/core/util.h"
+#include "esphome/core/log.h"
+
+extern char wifi_log_buf[1024];
 
 namespace esphome {
 namespace wifi {
@@ -477,7 +480,12 @@ int32_t WiFiComponent::wifi_channel_() { return WiFi.channel(); }
 network::IPAddress WiFiComponent::wifi_subnet_mask_() { return {WiFi.subnetMask()}; }
 network::IPAddress WiFiComponent::wifi_gateway_ip_() { return {WiFi.gatewayIP()}; }
 network::IPAddress WiFiComponent::wifi_dns_ip_(int num) { return {WiFi.dnsIP(num)}; }
-void WiFiComponent::wifi_loop_() {}
+void WiFiComponent::wifi_loop_() {
+  if (wifi_log_buf[0]) {
+    ESP_LOGD("lwip", "%s", wifi_log_buf);
+    memset(wifi_log_buf, 0, 1024);
+  }
+}
 
 }  // namespace wifi
 }  // namespace esphome
