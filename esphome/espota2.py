@@ -312,12 +312,11 @@ def perform_ota(
 
 def run_ota_impl_(remote_host, remote_port, password, filename):
     if is_ip_address(remote_host):
-        _LOGGER.info("Connecting to %s", remote_host)
-        ip = remote_host
+        res = socket.getaddrinfo(remote_host, remote_port, proto=socket.IPPROTO_TCP)
     else:
         _LOGGER.info("Resolving IP address of %s", remote_host)
         try:
-            ip = resolve_ip_address(remote_host)
+            res = resolve_ip_address(remote_host, remote_port)
         except EsphomeError as err:
             _LOGGER.error(
                 "Error resolving IP address of %s. Is it connected to WiFi?",
@@ -328,27 +327,33 @@ def run_ota_impl_(remote_host, remote_port, password, filename):
                 "https://esphome.io/components/wifi.html#manual-ips)"
             )
             raise OTAError(err) from err
-        _LOGGER.info(" -> %s", ip)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(10.0)
-    try:
-        sock.connect((ip, remote_port))
-    except OSError as err:
-        sock.close()
-        _LOGGER.error("Connecting to %s:%s failed: %s", remote_host, remote_port, err)
-        return 1
-
-    with open(filename, "rb") as file_handle:
+    for r in res:
+        af, socktype, _, _, sa = r
+        _LOGGER.info("Connecting to %s port %s...", sa[0], sa[1])
+        sock = socket.socket(af, socktype)
+        sock.settimeout(10.0)
         try:
-            perform_ota(sock, password, file_handle, filename)
-        except OTAError as err:
-            _LOGGER.error(str(err))
-            return 1
-        finally:
+            sock.connect(sa)
+        except OSError as err:
             sock.close()
+            _LOGGER.error("Connecting to %s port %s failed: %s", sa[0], sa[1], err)
+            continue
 
-    return 0
+        _LOGGER.info("Connected to %s", sa[0])
+        with open(filename, "rb") as file_handle:
+            try:
+                perform_ota(sock, password, file_handle, filename)
+            except OTAError as err:
+                _LOGGER.error(str(err))
+                return 1
+            finally:
+                sock.close()
+
+        return 0
+
+    _LOGGER.error("Connecting to %s:%s failed.", remote_host, remote_port)
+    return 1
 
 
 def run_ota(remote_host, remote_port, password, filename):

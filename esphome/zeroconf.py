@@ -182,8 +182,11 @@ class EsphomeZeroconf(Zeroconf):
         if (
             info.load_from_cache(self)
             or (timeout and info.request(self, timeout * 1000))
-        ) and (addresses := info.ip_addresses_by_version(IPVersion.V4Only)):
-            return str(addresses[0])
+        ) and (
+            addresses := info.parsed_scoped_addresses(IPVersion.V6Only)
+            + info.parsed_scoped_addresses(IPVersion.V4Only)
+        ):
+            return addresses
         return None
 
 
@@ -194,6 +197,9 @@ class AsyncEsphomeZeroconf(AsyncZeroconf):
         if (
             info.load_from_cache(self.zeroconf)
             or (timeout and await info.async_request(self.zeroconf, timeout * 1000))
-        ) and (addresses := info.ip_addresses_by_version(IPVersion.V4Only)):
-            return str(addresses[0])
+        ) and (
+            addresses := info.parsed_scoped_addresses(IPVersion.V6Only)
+            + info.parsed_scoped_addresses(IPVersion.V4Only)
+        ):
+            return addresses
         return None
