@@ -20,16 +20,6 @@ CONFIG_SCHEMA = cv.Schema(
             bk72xx=False,
         ): cv.All(
             cv.boolean,
-            cv.Any(
-                cv.require_framework_version(
-                    esp_idf=cv.Version(0, 0, 0),
-                    esp32_arduino=cv.Version(0, 0, 0),
-                    esp8266_arduino=cv.Version(0, 0, 0),
-                    rp2040_arduino=cv.Version(0, 0, 0),
-                    bk72xx_libretiny=cv.Version(1, 7, 0),
-                ),
-                cv.boolean_false,
-            ),
         ),
         cv.Optional(CONF_MIN_IPV6_ADDR_COUNT, default=0): cv.positive_int,
     }
