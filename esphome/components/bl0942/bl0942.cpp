@@ -56,7 +56,7 @@ void BL0942::loop() {
     return;
   }
 
-  while (avail) {
+  if (avail) {
     int rcv = sizeof(DataPacket) - this->incoming_buflen_;
     if (rcv > avail)
       rcv = avail;
@@ -82,7 +82,7 @@ void BL0942::loop() {
           this->validate_checksum_((DataPacket *) this->incoming_buf_)) {
         this->received_package_((DataPacket *) this->incoming_buf_);
         this->incoming_buflen_ = 0;
-        continue;
+        return;
       }
 
       // Kill the header byte so that we skip to the next one.
@@ -184,7 +184,7 @@ void BL0942::setup() {
   this->write_reg_(BL0942_REG_USR_WRPROT, 0);
 
   if (this->read_reg_(BL0942_REG_MODE) != mode)
-    this->status_set_warning(LOG_STR("BL0942 setup failed!"));
+    this->status_set_warning("BL0942 setup failed!");
 
   this->flush();
 }
