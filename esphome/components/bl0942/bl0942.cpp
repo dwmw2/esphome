@@ -154,6 +154,7 @@ int BL0942::read_reg_(uint8_t reg) {
 void BL0942::update() {
   this->write_byte(BL0942_READ_COMMAND | this->address_);
   this->write_byte(BL0942_FULL_PACKET);
+  ESP_LOGW(TAG, "Requesting update");
 }
 
 void BL0942::setup() {
