@@ -2,20 +2,32 @@ from esphome import automation, pins
 import esphome.codegen as cg
 from esphome.components import time, uart
 import esphome.config_validation as cv
-from esphome.const import CONF_ID, CONF_SENSOR_DATAPOINT, CONF_TIME_ID, CONF_TRIGGER_ID
-
-DEPENDENCIES = ["uart"]
+from esphome.const import (
+    CONF_ADDRESS,
+    CONF_ID,
+    CONF_PORT,
+    CONF_SENSOR_DATAPOINT,
+    CONF_TIME_ID,
+    CONF_TRIGGER_ID,
+    CONF_TYPE,
+)
 
 CONF_IGNORE_MCU_UPDATE_ON_DATAPOINTS = "ignore_mcu_update_on_datapoints"
-
 CONF_ON_DATAPOINT_UPDATE = "on_datapoint_update"
 CONF_DATAPOINT_TYPE = "datapoint_type"
 CONF_STATUS_PIN = "status_pin"
+CONF_DEVICE_ID = "device_id"
+CONF_KEY = "key"
+CONF_VERSION = "version"
+
+TYPE_UART = "uart"
+TYPE_TCP = "tcp"
 
 tuya_ns = cg.esphome_ns.namespace("tuya")
 TuyaDatapointType = tuya_ns.enum("TuyaDatapointType", is_class=True)
 Tuya = tuya_ns.class_("Tuya", cg.Component)
 TuyaUART = tuya_ns.class_("TuyaUART", cg.Component, uart.UARTDevice, Tuya)
+TuyaTCP = tuya_ns.class_("TuyaTCP", Tuya)
 
 DPTYPE_ANY = "any"
 DPTYPE_RAW = "raw"
@@ -82,47 +94,86 @@ def assign_declare_id(value):
 
 
 CONF_TUYA_ID = "tuya_id"
-CONFIG_SCHEMA = (
-    cv.Schema(
-        {
-            cv.GenerateID(): cv.declare_id(TuyaUART),
-            cv.Optional(CONF_TIME_ID): cv.use_id(time.RealTimeClock),
-            cv.Optional(CONF_IGNORE_MCU_UPDATE_ON_DATAPOINTS): cv.ensure_list(
-                cv.uint8_t
-            ),
-            cv.Optional(CONF_STATUS_PIN): pins.gpio_output_pin_schema,
-            cv.Optional(CONF_ON_DATAPOINT_UPDATE): automation.validate_automation(
-                {
-                    cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(
-                        DATAPOINT_TRIGGERS[DPTYPE_ANY]
-                    ),
-                    cv.Required(CONF_SENSOR_DATAPOINT): cv.uint8_t,
-                    cv.Optional(CONF_DATAPOINT_TYPE, default=DPTYPE_ANY): cv.one_of(
-                        *DATAPOINT_TRIGGERS, lower=True
-                    ),
-                },
-                extra_validators=assign_declare_id,
-            ),
-        }
-    )
-    .extend(cv.COMPONENT_SCHEMA)
-    .extend(uart.UART_DEVICE_SCHEMA)
+
+
+def AUTO_LOAD(config):
+    if config.get(CONF_TYPE) == TYPE_TCP:
+        return ["socket"]
+    return []
+
+
+# Common schema for both UART and TCP
+BASE_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_IGNORE_MCU_UPDATE_ON_DATAPOINTS): cv.ensure_list(cv.uint8_t),
+        cv.Optional(CONF_ON_DATAPOINT_UPDATE): automation.validate_automation(
+            {
+                cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(
+                    DATAPOINT_TRIGGERS[DPTYPE_ANY]
+                ),
+                cv.Required(CONF_SENSOR_DATAPOINT): cv.uint8_t,
+                cv.Optional(CONF_DATAPOINT_TYPE, default=DPTYPE_ANY): cv.one_of(
+                    *DATAPOINT_TRIGGERS, lower=True
+                ),
+            },
+            extra_validators=assign_declare_id,
+        ),
+    }
+)
+
+CONFIG_SCHEMA = cv.typed_schema(
+    {
+        TYPE_UART: BASE_SCHEMA.extend(
+            {
+                cv.GenerateID(): cv.declare_id(TuyaUART),
+                cv.Optional(CONF_TIME_ID): cv.use_id(time.RealTimeClock),
+                cv.Optional(CONF_STATUS_PIN): pins.gpio_output_pin_schema,
+            }
+        )
+        .extend(cv.COMPONENT_SCHEMA)
+        .extend(uart.UART_DEVICE_SCHEMA),
+        TYPE_TCP: BASE_SCHEMA.extend(
+            {
+                cv.GenerateID(): cv.declare_id(TuyaTCP),
+                cv.Required(CONF_ADDRESS): cv.ipv4address,
+                cv.Optional(CONF_PORT, default=6668): cv.port,
+                cv.Optional(CONF_DEVICE_ID): cv.string,
+                cv.Optional(CONF_KEY): cv.string,
+                cv.Optional(CONF_VERSION): cv.string,
+            }
+        ).extend(cv.COMPONENT_SCHEMA),
+    },
+    lower=True,
+    default_type=TYPE_UART,
 )
 
 
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
-    await uart.register_uart_device(var, config)
-    if CONF_TIME_ID in config:
-        time_ = await cg.get_variable(config[CONF_TIME_ID])
-        cg.add(var.set_time_id(time_))
-    if CONF_STATUS_PIN in config:
-        status_pin_ = await cg.gpio_pin_expression(config[CONF_STATUS_PIN])
-        cg.add(var.set_status_pin(status_pin_))
+
+    if config[CONF_TYPE] == TYPE_UART:
+        await uart.register_uart_device(var, config)
+        if CONF_STATUS_PIN in config:
+            status_pin_ = await cg.gpio_pin_expression(config[CONF_STATUS_PIN])
+            cg.add(var.set_status_pin(status_pin_))
+        if CONF_TIME_ID in config:
+            time_ = await cg.get_variable(config[CONF_TIME_ID])
+            cg.add(var.set_time_id(time_))
+    elif config[CONF_TYPE] == TYPE_TCP:
+        cg.add(var.set_address(str(config[CONF_ADDRESS])))
+        cg.add(var.set_port(config[CONF_PORT]))
+        if CONF_DEVICE_ID in config:
+            cg.add(var.set_device_id(config[CONF_DEVICE_ID]))
+        if CONF_KEY in config:
+            cg.add(var.set_key(config[CONF_KEY]))
+        if CONF_VERSION in config:
+            cg.add(var.set_version(config[CONF_VERSION]))
+
     if CONF_IGNORE_MCU_UPDATE_ON_DATAPOINTS in config:
         for dp in config[CONF_IGNORE_MCU_UPDATE_ON_DATAPOINTS]:
             cg.add(var.add_ignore_mcu_update_on_datapoints(dp))
+
     for conf in config.get(CONF_ON_DATAPOINT_UPDATE, []):
         trigger = cg.new_Pvariable(
             conf[CONF_TRIGGER_ID], var, conf[CONF_SENSOR_DATAPOINT]
@@ -130,3 +181,22 @@ async def to_code(config):
         await automation.build_automation(
             trigger, [(DATAPOINT_TYPES[conf[CONF_DATAPOINT_TYPE]], "x")], conf
         )
+
+
+def FILTER_SOURCE_FILES() -> list[str]:
+    from esphome.core import CORE
+
+    excluded = []
+    tuya_configs = CORE.config.get("tuya", [])
+    if not isinstance(tuya_configs, list):
+        tuya_configs = [tuya_configs]
+
+    has_uart = any(cfg.get(CONF_TYPE) == TYPE_UART for cfg in tuya_configs)
+    has_tcp = any(cfg.get(CONF_TYPE) == TYPE_TCP for cfg in tuya_configs)
+
+    if not has_uart:
+        excluded.extend(["tuya_uart.cpp", "tuya_uart.h"])
+    if not has_tcp:
+        excluded.extend(["tuya_tcp.cpp", "tuya_tcp.h"])
+
+    return excluded
