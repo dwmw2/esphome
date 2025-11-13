@@ -9,6 +9,7 @@ from esphome.const import (
     CONF_PORT,
     CONF_VERSION,
 )
+from esphome.core import CORE
 import esphome.final_validate as fv
 
 CODEOWNERS = ["@dwmw2"]
@@ -78,3 +79,14 @@ async def to_code(config):
     cg.add(var.set_version(config[CONF_VERSION]))
 
     await tuya.register_tuya(var, config)
+
+    # Add crypto library for host builds
+    if CORE.is_host:
+        cg.add_build_flag("-lcrypto")
+        cg.add_build_flag("-lz")
+
+
+def FILTER_SOURCE_FILES() -> list[str]:
+    if CORE.is_host:
+        return ["tuyaAPI-mbedtls.cpp"]
+    return ["tuyaAPI-crypto.cpp"]
