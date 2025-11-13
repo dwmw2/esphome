@@ -1,0 +1,1 @@
+../../../../tuyapp/src/tuyaAPI35.hpp
