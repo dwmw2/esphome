@@ -8,11 +8,15 @@ from esphome.const import (
     CONF_KEY,
     CONF_PORT,
     CONF_VERSION,
+    PLATFORM_ESP32,
+    PLATFORM_HOST,
 )
 from esphome.core import CORE
 import esphome.final_validate as fv
 
 CODEOWNERS = ["@dwmw2"]
+
+DEPENDENCIES = ["network"]
 
 tuya_ns = cg.esphome_ns.namespace("tuya")
 Tuya = tuya_ns.class_("Tuya", cg.Component)
@@ -51,6 +55,10 @@ CONFIG_SCHEMA = tuya.BASE_SCHEMA.extend(
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
+# Support ESP32 and host platforms
+# ESP8266 lwip_raw_tcp implementation doesn't support outbound connections (no connect/select)
+PLATFORMS = [PLATFORM_ESP32, PLATFORM_HOST]
+
 
 def _final_validate(config):
     """Validate IPv6 address requires IPv6 to be enabled."""
@@ -88,6 +96,15 @@ async def to_code(config):
 
 
 def FILTER_SOURCE_FILES() -> list[str]:
+    # Determine which crypto implementation to use
     if CORE.is_host:
-        return ["tuyaAPI-mbedtls.cpp"]
-    return ["tuyaAPI-crypto.cpp"]
+        crypto_impl = "tuyaAPI-crypto.cpp"
+    elif CORE.is_esp8266:
+        crypto_impl = "tuyaAPI-bearssl.cpp"
+    else:  # ESP32 (Arduino and ESP-IDF)
+        crypto_impl = "tuyaAPI-mbedtls.cpp"
+
+    # Return list of implementations to exclude
+    all_impls = ["tuyaAPI-crypto.cpp", "tuyaAPI-mbedtls.cpp", "tuyaAPI-bearssl.cpp"]
+    all_impls.remove(crypto_impl)
+    return all_impls

@@ -36,7 +36,8 @@ void TuyaTCP::loop() {
 
     case State::CONNECTING: {
       if (!socket_) {
-        // state set by disconnect_()
+        ESP_LOGE(TAG, "Invalid socket in CONNECTING state");
+        disconnect_();
         break;
       }
 
@@ -47,7 +48,6 @@ void TuyaTCP::loop() {
       if (fd < 0) {
         ESP_LOGE(TAG, "Invalid socket fd");
         disconnect_();
-        // state set by disconnect_()
         break;
       }
       FD_SET(fd, &write_fds);
@@ -71,7 +71,6 @@ void TuyaTCP::loop() {
           if (packet_size < 0) {
             ESP_LOGE(TAG, "Failed to build negotiation packet: %d", packet_size);
             disconnect_();
-            // state set by disconnect_()
           } else if (packet_size == 0) {
             // No negotiation needed
             ESP_LOGI(TAG, "No negotiation needed");
@@ -87,12 +86,10 @@ void TuyaTCP::loop() {
         } else {
           ESP_LOGW(TAG, "Connection failed: %d", error);
           disconnect_();
-          // state set by disconnect_()
         }
       } else if (ret < 0) {
         ESP_LOGE(TAG, "Select error: %d", errno);
         disconnect_();
-        // state set by disconnect_()
       }
       // If ret == 0, socket not ready yet, try again next loop
       break;
@@ -101,7 +98,7 @@ void TuyaTCP::loop() {
     case State::NEGOTIATING: {
       if (!socket_) {
         ESP_LOGW(TAG, "Disconnected during negotiation");
-        // state set by disconnect_()
+        disconnect_();
         break;
       }
 
@@ -131,7 +128,6 @@ void TuyaTCP::loop() {
           ESP_LOGE(TAG, "Write error during negotiation: %d", errno);
           socket_->close();
           disconnect_();
-          // state set by disconnect_()
           break;
         }
         // If EAGAIN, just try again next loop
@@ -159,7 +155,6 @@ void TuyaTCP::loop() {
         if (packet_size < 0) {
           ESP_LOGE(TAG, "Negotiation failed");
           disconnect_();
-          // state set by disconnect_()
         } else if (packet_size > 0) {
           pending_send_.resize(packet_size);
           ESP_LOGD(TAG, "Prepared negotiation response: %d bytes", packet_size);
@@ -170,7 +165,6 @@ void TuyaTCP::loop() {
       } else if (len < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
         ESP_LOGW(TAG, "Read error during negotiation: %d", errno);
         disconnect_();
-        // state set by disconnect_()
       }
       break;
     }
@@ -178,7 +172,7 @@ void TuyaTCP::loop() {
     case State::CONNECTED: {
       if (!socket_) {
         ESP_LOGW(TAG, "Disconnected");
-        // state set by disconnect_()
+        disconnect_();
         initial_query_sent_ = false;
         break;
       }
@@ -193,7 +187,8 @@ void TuyaTCP::loop() {
         ESP_LOGD(TAG, "DP query payload: %s", payload);
 
         std::vector<uint8_t> message(1024);
-        int len = tuya_api_->BuildTuyaMessage(message.data(), TUYA_DP_QUERY, std::string(payload));
+        uint8_t command = (tuya_api_->getProtocol() >= tuyaAPI::Protocol::v35) ? TUYA_DP_QUERY_NEW : TUYA_DP_QUERY;
+        int len = tuya_api_->BuildTuyaMessage(message.data(), command, std::string(payload));
         if (len > 0) {
           ssize_t sent = socket_->write(message.data(), len);
           if (sent == len) {
@@ -218,11 +213,9 @@ void TuyaTCP::loop() {
         // Connection closed by peer
         ESP_LOGI(TAG, "Connection closed by peer");
         disconnect_();
-        // state set by disconnect_()
       } else if (len < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
         ESP_LOGW(TAG, "Read error: %d", errno);
         disconnect_();
-        // state set by disconnect_()
       }
 
       // Send heartbeat if no data received for 5 seconds
@@ -237,7 +230,6 @@ void TuyaTCP::loop() {
           } else if (sent < 0) {
             ESP_LOGW(TAG, "Failed to send heartbeat: %d", errno);
             disconnect_();
-            // state set by disconnect_()
           }
         }
       }
@@ -326,37 +318,41 @@ void TuyaTCP::send_datapoint_command(uint8_t datapoint_id, tuya::TuyaDatapointTy
 void TuyaTCP::connect_() {
   // Socket should already be cleaned up by disconnect_()
   // Just create a new one
-  // Detect address family based on whether address contains ':'
-  int family = (address_.find(':') != std::string::npos) ? AF_INET6 : AF_INET;
+  struct sockaddr_storage addr;
+  socklen_t addrlen = socket::set_sockaddr((struct sockaddr *) &addr, sizeof(addr), address_, port_);
+  if (addrlen == 0) {
+    ESP_LOGE(TAG, "Invalid address: %s", address_.c_str());
+    disconnect_();
+    return;
+  }
+
+  int family = ((struct sockaddr *) &addr)->sa_family;
   socket_ = socket::socket(family, SOCK_STREAM, IPPROTO_TCP);
   if (!socket_) {
     ESP_LOGE(TAG, "Failed to create socket");
-    // state set by disconnect_()
+    disconnect_();
     return;
   }
 
   socket_->setblocking(false);
 
-  struct sockaddr_storage addr;
-  socklen_t addrlen = socket::set_sockaddr((struct sockaddr *) &addr, sizeof(addr), address_, port_);
-
-  // Format IPv6 addresses with brackets for clarity
-  if (family == AF_INET6) {
-    ESP_LOGI(TAG, "Connecting to [%s]:%d...", address_.c_str(), port_);
-  } else {
+  // IPv6 literals should be printed in square brackets
+  if (family == AF_INET) {
     ESP_LOGI(TAG, "Connecting to %s:%d...", address_.c_str(), port_);
+  } else {
+    ESP_LOGI(TAG, "Connecting to [%s]:%d...", address_.c_str(), port_);
   }
   int err = socket_->connect((struct sockaddr *) &addr, addrlen);
   if (err != 0 && errno != EINPROGRESS) {
     ESP_LOGE(TAG, "Connect failed: %d", errno);
     disconnect_();
-    // state set by disconnect_()
   }
 }
 
 void TuyaTCP::dump_config() {
   ESP_LOGCONFIG(TAG, "Tuya TCP:");
   ESP_LOGCONFIG(TAG, "  Address: %s", address_.c_str());
+  ESP_LOGCONFIG(TAG, "  Port: %d", (int) port_);
   ESP_LOGCONFIG(TAG, "  Device ID: %s", device_id_.c_str());
   ESP_LOGCONFIG(TAG, "  Version: %d", (int) version_);
   ESP_LOGCONFIG(TAG, "  State: %d", (int) state_);

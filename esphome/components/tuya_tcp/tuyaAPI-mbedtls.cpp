@@ -14,7 +14,8 @@
 #define MBEDTLS_AES_ALT
 #include <aes_alt.h>
 #include <mbedtls/md.h>
-#include <mbedtls/gcm.h>
+#include "mbedtls/esp_config.h"
+#include "mbedtls/gcm.h"
 #include <cstring>
 
 int tuyaAPI::aes_128_ecb_encrypt(const unsigned char *key, const unsigned char *input, int input_len,
