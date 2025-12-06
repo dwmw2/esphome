@@ -11,11 +11,9 @@ static const char *const TAG = "tuya_tcp";
 void TuyaTCP::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Tuya TCP...");
 
-  char version_str[8];
-  snprintf(version_str, sizeof(version_str), "%.1f", version_);
-  tuya_api_ = tuyaAPI::create(version_str);
+  tuya_api_ = tuyaAPI::create(version_);
   if (!tuya_api_) {
-    ESP_LOGE(TAG, "Failed to create Tuya API for version %.1f", version_);
+    ESP_LOGE(TAG, "Failed to create Tuya API");
     mark_failed();
     return;
   }
@@ -256,9 +254,7 @@ void TuyaTCP::start_negotiation_() {
     delete tuya_api_;
   }
 
-  char version_str[8];
-  snprintf(version_str, sizeof(version_str), "%.1f", version_);
-  tuya_api_ = tuyaAPI::create(version_str);
+  tuya_api_ = tuyaAPI::create(version_);
   if (!tuya_api_) {
     ESP_LOGE(TAG, "Failed to recreate Tuya API");
     return;
@@ -362,7 +358,7 @@ void TuyaTCP::dump_config() {
   ESP_LOGCONFIG(TAG, "Tuya TCP:");
   ESP_LOGCONFIG(TAG, "  Address: %s", address_.c_str());
   ESP_LOGCONFIG(TAG, "  Device ID: %s", device_id_.c_str());
-  ESP_LOGCONFIG(TAG, "  Version: %.1f", version_);
+  ESP_LOGCONFIG(TAG, "  Version: %d", (int) version_);
   ESP_LOGCONFIG(TAG, "  State: %d", (int) state_);
   tuya::Tuya::dump_config();
 }

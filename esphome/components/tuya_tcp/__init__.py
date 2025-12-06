@@ -14,19 +14,20 @@ import esphome.final_validate as fv
 
 CODEOWNERS = ["@dwmw2"]
 
-PROTOCOL_VERSIONS = {
-    "3.1": 3.1,
-    "3.2": 3.2,
-    "3.3": 3.3,
-    "3.4": 3.4,
-    "3.5": 3.5,
-}
-
 tuya_ns = cg.esphome_ns.namespace("tuya")
 Tuya = tuya_ns.class_("Tuya", cg.Component)
 
 tuya_tcp_ns = cg.esphome_ns.namespace("tuya_tcp")
 TuyaTCP = tuya_tcp_ns.class_("TuyaTCP", Tuya)
+
+tuyaAPI_ns = cg.global_ns.class_("tuyaAPI")
+Protocol = tuyaAPI_ns.enum("Protocol", is_class=True)
+PROTOCOL_VERSIONS = {
+    "3.1": Protocol.v31,
+    "3.3": Protocol.v33,
+    "3.4": Protocol.v34,
+    "3.5": Protocol.v35,
+}
 
 AUTO_LOAD = ["socket", "tuya"]
 

@@ -28,7 +28,7 @@ class TuyaTCP : public tuya::Tuya {
   void set_port(uint16_t port) { port_ = port; }
   void set_device_id(const std::string &device_id) { device_id_ = device_id; }
   void set_key(const std::string &key) { key_ = key; }
-  void set_version(float version) { version_ = version; }
+  void set_version(tuyaAPI::Protocol version) { version_ = version; }
 
  protected:
   void send_datapoint_command(uint8_t datapoint_id, tuya::TuyaDatapointType datapoint_type,
@@ -43,7 +43,7 @@ class TuyaTCP : public tuya::Tuya {
   uint16_t port_{6668};
   std::string device_id_;
   std::string key_;
-  float version_{3.3f};
+  tuyaAPI::Protocol version_{tuyaAPI::Protocol::v33};
   std::unique_ptr<socket::Socket> socket_{nullptr};
   std::string rx_buffer_;
   State state_{State::DISCONNECTED};

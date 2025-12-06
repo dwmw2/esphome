@@ -14,6 +14,7 @@
 #define MBEDTLS_AES_ALT
 #include <aes_alt.h>
 #include <mbedtls/md.h>
+#include <mbedtls/gcm.h>
 #include <cstring>
 
 int tuyaAPI::aes_128_ecb_encrypt(const unsigned char *key, const unsigned char *input, int input_len,
@@ -116,4 +117,47 @@ uint32_t tuyaAPI::crc32_compute(const unsigned char *data, int len) {
     crc = crc_table[(crc ^ data[i]) & 0xff] ^ (crc >> 8);
   }
   return crc ^ 0xffffffff;
+}
+
+int tuyaAPI::aes_128_gcm_encrypt(const unsigned char *key, const unsigned char *iv, int iv_len,
+                                 const unsigned char *aad, int aad_len, const unsigned char *input, int input_len,
+                                 unsigned char *output, int *output_len, unsigned char *tag, int tag_len) {
+  mbedtls_gcm_context ctx;
+  mbedtls_gcm_init(&ctx);
+
+  if (mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, 128) != 0) {
+    mbedtls_gcm_free(&ctx);
+    return -1;
+  }
+
+  if (mbedtls_gcm_crypt_and_tag(&ctx, MBEDTLS_GCM_ENCRYPT, input_len, iv, iv_len, aad, aad_len, input, output, tag_len,
+                                tag) != 0) {
+    mbedtls_gcm_free(&ctx);
+    return -1;
+  }
+
+  *output_len = input_len;
+  mbedtls_gcm_free(&ctx);
+  return 0;
+}
+
+int tuyaAPI::aes_128_gcm_decrypt(const unsigned char *key, const unsigned char *iv, int iv_len,
+                                 const unsigned char *aad, int aad_len, const unsigned char *input, int input_len,
+                                 const unsigned char *tag, int tag_len, unsigned char *output, int *output_len) {
+  mbedtls_gcm_context ctx;
+  mbedtls_gcm_init(&ctx);
+
+  if (mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, 128) != 0) {
+    mbedtls_gcm_free(&ctx);
+    return -1;
+  }
+
+  if (mbedtls_gcm_auth_decrypt(&ctx, input_len, iv, iv_len, aad, aad_len, tag, tag_len, input, output) != 0) {
+    mbedtls_gcm_free(&ctx);
+    return -1;
+  }
+
+  *output_len = input_len;
+  mbedtls_gcm_free(&ctx);
+  return 0;
 }

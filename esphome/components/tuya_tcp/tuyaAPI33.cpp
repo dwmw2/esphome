@@ -1,1 +1,1 @@
-/home/ANT.AMAZON.COM/dwmw/git/tuyapp/src/tuyaAPI33.cpp
+../../../../tuyapp/src/tuyaAPI33.cpp
