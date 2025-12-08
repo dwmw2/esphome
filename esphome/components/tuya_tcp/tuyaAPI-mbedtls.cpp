@@ -11,10 +11,17 @@
 
 #include "tuyaAPI.hpp"
 #include "esphome/core/helpers.h"
+#ifdef USE_ESP32
 #define MBEDTLS_AES_ALT
 #include <aes_alt.h>
-#include <mbedtls/md.h>
 #include "mbedtls/esp_config.h"
+#else
+#include <mbedtls/aes.h>
+// Use standard mbedtls constants instead of ESP32-specific ones
+#define ESP_AES_ENCRYPT MBEDTLS_AES_ENCRYPT
+#define ESP_AES_DECRYPT MBEDTLS_AES_DECRYPT
+#endif
+#include <mbedtls/md.h>
 #include "mbedtls/gcm.h"
 #include <cstring>
 

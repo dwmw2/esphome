@@ -90,12 +90,12 @@ async def to_code(config):
 
     await tuya.register_tuya(var, config)
 
-    # Add crypto library for host builds
+    # Add crypto library dependencies
     if CORE.is_host:
         cg.add_build_flag("-lcrypto")
         cg.add_build_flag("-lz")
     elif CORE.is_libretiny:
-        # LibreTiny uses Arduino Crypto library
+        # LibreTiny's mbedtls doesn't have GCM support, use Arduino Crypto library
         cg.add_library("rweather/Crypto", "0.4.0")
 
 
@@ -106,6 +106,7 @@ def FILTER_SOURCE_FILES() -> list[str]:
     elif CORE.is_esp8266:
         crypto_impl = "tuyaAPI-bearssl.cpp"
     elif CORE.is_libretiny:
+        # LibreTiny's mbedtls doesn't have GCM, use Arduino Crypto library
         crypto_impl = "tuyaAPI-arduino.cpp"
     else:  # ESP32 (Arduino and ESP-IDF)
         crypto_impl = "tuyaAPI-mbedtls.cpp"
