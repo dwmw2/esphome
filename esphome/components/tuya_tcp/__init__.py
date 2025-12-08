@@ -8,8 +8,10 @@ from esphome.const import (
     CONF_KEY,
     CONF_PORT,
     CONF_VERSION,
+    PLATFORM_BK72XX,
     PLATFORM_ESP32,
     PLATFORM_HOST,
+    PLATFORM_RTL87XX,
 )
 from esphome.core import CORE
 import esphome.final_validate as fv
@@ -54,9 +56,9 @@ CONFIG_SCHEMA = tuya.BASE_SCHEMA.extend(
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
-# Support ESP32 and host platforms
+# Support ESP32, LibreTiny (BK72XX, RTL87XX), and host platforms
 # ESP8266 lwip_raw_tcp implementation doesn't support outbound connections (no connect/select)
-PLATFORMS = [PLATFORM_ESP32, PLATFORM_HOST]
+PLATFORMS = [PLATFORM_ESP32, PLATFORM_BK72XX, PLATFORM_RTL87XX, PLATFORM_HOST]
 
 
 def _final_validate(config):
@@ -92,6 +94,9 @@ async def to_code(config):
     if CORE.is_host:
         cg.add_build_flag("-lcrypto")
         cg.add_build_flag("-lz")
+    elif CORE.is_libretiny:
+        # LibreTiny uses Arduino Crypto library
+        cg.add_library("rweather/Crypto", "0.4.0")
 
 
 def FILTER_SOURCE_FILES() -> list[str]:
@@ -100,10 +105,17 @@ def FILTER_SOURCE_FILES() -> list[str]:
         crypto_impl = "tuyaAPI-crypto.cpp"
     elif CORE.is_esp8266:
         crypto_impl = "tuyaAPI-bearssl.cpp"
+    elif CORE.is_libretiny:
+        crypto_impl = "tuyaAPI-arduino.cpp"
     else:  # ESP32 (Arduino and ESP-IDF)
         crypto_impl = "tuyaAPI-mbedtls.cpp"
 
     # Return list of implementations to exclude
-    all_impls = ["tuyaAPI-crypto.cpp", "tuyaAPI-mbedtls.cpp", "tuyaAPI-bearssl.cpp"]
+    all_impls = [
+        "tuyaAPI-crypto.cpp",
+        "tuyaAPI-mbedtls.cpp",
+        "tuyaAPI-bearssl.cpp",
+        "tuyaAPI-arduino.cpp",
+    ]
     all_impls.remove(crypto_impl)
     return all_impls
