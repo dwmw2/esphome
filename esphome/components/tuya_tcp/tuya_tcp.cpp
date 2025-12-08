@@ -17,8 +17,9 @@ void TuyaTCP::setup() {
 }
 
 void TuyaTCP::loop() {
-#if !defined(USE_ESP32) && !defined(USE_ARDUINO)
+#if !defined(USE_ESP32) && !defined(USE_ESP8266)
   // Only socket-based AsyncClient needs manual loop() polling
+  // ESP32 and ESP8266 use AsyncTCP library which is event-driven
   if (client_)
     client_->loop();
 #endif
