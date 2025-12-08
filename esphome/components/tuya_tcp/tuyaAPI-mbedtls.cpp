@@ -15,11 +15,11 @@
 #define MBEDTLS_AES_ALT
 #include <aes_alt.h>
 #include "mbedtls/esp_config.h"
+// Map standard mbedtls constants to ESP32-specific ones
+#define MBEDTLS_AES_ENCRYPT ESP_AES_ENCRYPT
+#define MBEDTLS_AES_DECRYPT ESP_AES_DECRYPT
 #else
 #include <mbedtls/aes.h>
-// Use standard mbedtls constants instead of ESP32-specific ones
-#define ESP_AES_ENCRYPT MBEDTLS_AES_ENCRYPT
-#define ESP_AES_DECRYPT MBEDTLS_AES_DECRYPT
 #endif
 #include <mbedtls/md.h>
 #include "mbedtls/gcm.h"
@@ -41,7 +41,7 @@ int tuyaAPI::aes_128_ecb_encrypt(const unsigned char *key, const unsigned char *
   *output_len = 0;
   // ECB mode processes 16-byte blocks
   for (int i = 0; i < padded_len; i += 16) {
-    mbedtls_aes_crypt_ecb(&ctx, ESP_AES_ENCRYPT, padded_input + i, output + i);
+    mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_ENCRYPT, padded_input + i, output + i);
     *output_len += 16;
   }
 
@@ -58,7 +58,7 @@ int tuyaAPI::aes_128_ecb_decrypt(const unsigned char *key, const unsigned char *
   *output_len = 0;
   // ECB mode processes 16-byte blocks
   for (int i = 0; i < input_len; i += 16) {
-    mbedtls_aes_crypt_ecb(&ctx, ESP_AES_DECRYPT, input + i, output + i);
+    mbedtls_aes_crypt_ecb(&ctx, MBEDTLS_AES_DECRYPT, input + i, output + i);
     *output_len += 16;
   }
 
