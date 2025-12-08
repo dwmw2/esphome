@@ -95,8 +95,8 @@ async def to_code(config):
         cg.add_build_flag("-lcrypto")
         cg.add_build_flag("-lz")
     elif CORE.is_libretiny:
-        # LibreTiny's mbedtls doesn't have GCM support, use Arduino Crypto library
-        cg.add_library("rweather/Crypto", "0.4.0")
+        # Enable GCM support in LibreTiny's mbedtls
+        cg.add_build_flag("-DMBEDTLS_GCM_C")
 
 
 def FILTER_SOURCE_FILES() -> list[str]:
@@ -105,10 +105,7 @@ def FILTER_SOURCE_FILES() -> list[str]:
         crypto_impl = "tuyaAPI-crypto.cpp"
     elif CORE.is_esp8266:
         crypto_impl = "tuyaAPI-bearssl.cpp"
-    elif CORE.is_libretiny:
-        # LibreTiny's mbedtls doesn't have GCM, use Arduino Crypto library
-        crypto_impl = "tuyaAPI-arduino.cpp"
-    else:  # ESP32 (Arduino and ESP-IDF)
+    else:  # ESP32 (Arduino and ESP-IDF) and LibreTiny (both have mbedtls)
         crypto_impl = "tuyaAPI-mbedtls.cpp"
 
     # Return list of implementations to exclude
