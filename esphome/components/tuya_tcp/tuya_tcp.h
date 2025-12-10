@@ -26,6 +26,7 @@ class TuyaTCP : public tuya::Tuya {
   void set_device_id(const std::string &device_id) { device_id_ = device_id; }
   void set_key(const std::string &key) { key_ = key; }
   void set_version(tuyaAPI::Protocol version) { version_ = version; }
+  void set_tuya_api(tuyaAPI *api) { tuya_api_ = api; }
 
  protected:
   void send_datapoint_command(uint8_t datapoint_id, tuya::TuyaDatapointType datapoint_type,

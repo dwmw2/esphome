@@ -2,16 +2,16 @@
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
 #include "esphome/components/network/util.h"
-
+#include "tuyaAPI34.hpp"
 namespace esphome {
 namespace tuya_tcp {
 
 static const char *const TAG = "tuya_tcp";
 
 void TuyaTCP::setup() {
-  tuya_api_ = tuyaAPI::create(version_);
+  // tuya_api_ is set via set_tuya_api() before setup() is called
   if (!tuya_api_) {
-    ESP_LOGE(TAG, "Failed to create Tuya API");
+    ESP_LOGE(TAG, "Tuya API not initialized");
     mark_failed();
   }
 }
@@ -53,17 +53,7 @@ void TuyaTCP::disconnect_() {
   initial_query_sent_ = false;
 }
 
-void TuyaTCP::start_negotiation_() {
-  if (tuya_api_) {
-    delete tuya_api_;
-  }
-  tuya_api_ = tuyaAPI::create(version_);
-  if (!tuya_api_) {
-    ESP_LOGE(TAG, "Failed to recreate Tuya API");
-    return;
-  }
-  tuya_api_->SetEncryptionKey(key_);
-}
+void TuyaTCP::start_negotiation_() { tuya_api_->SetEncryptionKey(key_); }
 
 void TuyaTCP::handle_negotiation_data_(const uint8_t *data, size_t len) {
   tuya_api_->DecodeSessionMessage(const_cast<uint8_t *>(data), len);
@@ -109,14 +99,10 @@ void TuyaTCP::send_initial_query_() {
   if (initial_query_sent_)
     return;
 
-  char payload[256];
-  uint32_t now = time(nullptr);
-  snprintf(payload, sizeof(payload), "{\"gwId\":\"%s\",\"devId\":\"%s\",\"uid\":\"%s\",\"t\":\"%u\"}",
-           device_id_.c_str(), device_id_.c_str(), device_id_.c_str(), now);
-
+  uint8_t command = TUYA_DP_QUERY;
+  std::string payload = tuya_api_->GeneratePayload(command, device_id_, "");
   std::vector<uint8_t> message(1024);
-  uint8_t command = (tuya_api_->getProtocol() >= tuyaAPI::Protocol::v35) ? TUYA_DP_QUERY_NEW : TUYA_DP_QUERY;
-  int len = tuya_api_->BuildTuyaMessage(message.data(), command, std::string(payload));
+  int len = tuya_api_->BuildTuyaMessage(message.data(), command, payload);
   if (len > 0) {
     client_->write((const char *) message.data(), len);
     ESP_LOGI(TAG, "Sent DP query");
