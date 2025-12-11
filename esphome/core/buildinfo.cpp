@@ -22,13 +22,21 @@ namespace esphome {
 namespace buildinfo {
 
 // Reference the linker symbols as uintptr_t from the *data* section to
-// avoid issues with pc-relative relocations on 64-bit platforms.
-static const uintptr_t config_hash = (uintptr_t) &ESPHOME_CONFIG_HASH;
-static const uintptr_t build_time = (uintptr_t) &ESPHOME_BUILD_TIME;
+// avoid issues with pc-relative relocations on 64-bit platforms. And
+// don't let the compiler know they're const or it'll optimise away the
+// whole thing and emit a relocation to the ESPHOME_XXX symbols above
+// directly, which defaults the whole point!
+//
+// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
+static uintptr_t config_hash = (uintptr_t) &ESPHOME_CONFIG_HASH;
+static uintptr_t build_time = (uintptr_t) &ESPHOME_BUILD_TIME;
+// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
 const char *get_config_hash() {
   static char hash_str[9];
-  snprintf(hash_str, sizeof(hash_str), "%08x", (uint32_t) config_hash);
+  if (!hash_str[0]) {
+    snprintf(hash_str, sizeof(hash_str), "%08x", (uint32_t) config_hash);
+  }
   return hash_str;
 }
 
@@ -36,9 +44,11 @@ time_t get_build_time() { return (time_t) build_time; }
 
 const char *get_build_time_string() {
   static char time_str[32];
-  time_t bt = get_build_time();
-  struct tm *tm_info = localtime(&bt);
-  strftime(time_str, sizeof(time_str), "%b %d %Y, %H:%M:%S", tm_info);
+  if (!time_str[0]) {
+    time_t bt = get_build_time();
+    struct tm *tm_info = localtime(&bt);
+    strftime(time_str, sizeof(time_str), "%b %d %Y, %H:%M:%S", tm_info);
+  }
   return time_str;
 }
 
