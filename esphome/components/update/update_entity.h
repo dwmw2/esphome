@@ -11,6 +11,8 @@ namespace update {
 struct UpdateInfo {
   std::string latest_version;
   std::string current_version;
+  std::string config_hash;
+  std::string build_time;
   std::string title;
   std::string summary;
   std::string release_url;
