@@ -2,6 +2,7 @@
 
 #include "esphome/core/application.h"
 #include "esphome/core/version.h"
+#include "esphome/core/buildinfo.h"
 
 #include "esphome/components/json/json_util.h"
 #include "esphome/components/network/util.h"
@@ -91,6 +92,14 @@ void HttpRequestUpdate::update_task(void *params) {
       this_update->update_info_.title = root["name"].as<std::string>();
       this_update->update_info_.latest_version = root["version"].as<std::string>();
 
+      // Optional buildinfo fields for more precise change detection
+      if (root["config_hash"].is<const char *>()) {
+        this_update->update_info_.config_hash = root["config_hash"].as<std::string>();
+      }
+      if (root["build_time"].is<const char *>()) {
+        this_update->update_info_.build_time = root["build_time"].as<std::string>();
+      }
+
       for (auto build : root["builds"].as<JsonArray>()) {
         if (!build["chipFamily"].is<const char *>()) {
           ESP_LOGE(TAG, "Manifest does not contain required fields");
@@ -159,8 +168,23 @@ void HttpRequestUpdate::update_task(void *params) {
 
   bool trigger_update_available = false;
 
-  if (this_update->update_info_.latest_version.empty() ||
-      this_update->update_info_.latest_version == this_update->update_info_.current_version) {
+  bool version_changed = !this_update->update_info_.latest_version.empty() &&
+                         this_update->update_info_.latest_version != this_update->update_info_.current_version;
+
+  bool buildinfo_changed = true;
+  if (!this_update->update_info_.config_hash.empty() || !this_update->update_info_.build_time.empty()) {
+    // If manifest has buildinfo, compare with local buildinfo for precise change detection
+    buildinfo_changed = false;
+    if (!this_update->update_info_.config_hash.empty()) {
+      buildinfo_changed |= (this_update->update_info_.config_hash != esphome::buildinfo::get_config_hash());
+    }
+    if (!this_update->update_info_.build_time.empty()) {
+      buildinfo_changed |=
+          (this_update->update_info_.build_time != std::to_string(esphome::buildinfo::get_build_time()));
+    }
+  }
+
+  if (this_update->update_info_.latest_version.empty() || (!version_changed && !buildinfo_changed)) {
     this_update->state_ = update::UPDATE_STATE_NO_UPDATE;
   } else {
     if (this_update->state_ != update::UPDATE_STATE_AVAILABLE) {
