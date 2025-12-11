@@ -46,6 +46,7 @@ from esphome.const import (
     PLATFORM_ESP8266,
     PLATFORM_RP2040,
     SECRETS_FILES,
+    __version__,
 )
 from esphome.core import CORE, EsphomeError, coroutine
 from esphome.enum import StrEnum
@@ -528,6 +529,9 @@ def compile_program(args: ArgsProtocol, config: ConfigType) -> int:
 
 def _check_and_emit_buildinfo():
     """Check if firmware was rebuilt and emit buildinfo."""
+    import hashlib
+    import hmac
+    import json
 
     firmware_path = CORE.firmware_bin
     buildinfo_script_path = CORE.relative_build_path("buildinfo.ld")
@@ -556,13 +560,71 @@ def _check_and_emit_buildinfo():
         config_hash = config_hash_match.group(1)
         build_time = int(build_time_match.group(1))
 
+        # Calculate MD5 of firmware
+        with open(firmware_path, "rb") as f:
+            firmware_data = f.read()
+        md5_hash = hashlib.md5(firmware_data).hexdigest()
+
+        # Look for hmac_key in update components and calculate HMAC for each
+        hmac_results = []
+        for update_config in CORE.config.get("update", []):
+            if (
+                update_config.get("platform") == "http_request"
+                and "hmac_key" in update_config
+            ):
+                update_name = update_config.get("name") or update_config.get(
+                    "id", "unknown"
+                )
+                hmac_key = update_config["hmac_key"]
+                hmac_md5_hash = hmac.new(
+                    hmac_key.encode(), firmware_data, hashlib.md5
+                ).hexdigest()
+                hmac_results.append((update_name, hmac_md5_hash))
+
         # Emit buildinfo
         print("=== ESPHome Build Info ===")
         print(f"Config Hash: 0x{config_hash}")
         print(
             f"Build Time:  {build_time} ({time.strftime('%Y-%m-%d %H:%M:%S %z', time.localtime(build_time))})"
         )
+        if hmac_results:
+            print(f"MD5:         {md5_hash}")
+            for update_name, hmac_md5_hash in hmac_results:
+                print(f"HMAC-MD5 ({update_name}): {hmac_md5_hash}")
         print("===========================")
+
+        # Generate manifest files for each update component
+        for update_name, hmac_md5_hash in hmac_results:
+            # Use same version logic as http_request_update.cpp
+            project_version = (
+                CORE.config.get("esphome", {}).get("project", {}).get("version")
+            )
+            version = project_version if project_version else __version__
+
+            manifest = {
+                "name": CORE.name,
+                "version": version,
+                "config_hash": f"0x{config_hash}",
+                "build_time": str(build_time),
+                "builds": [
+                    {
+                        "chipFamily": "ESP32-S3",  # TODO: Make this dynamic
+                        "ota": {
+                            "path": firmware_path.name,
+                            "md5": md5_hash,
+                            "hmac_md5": hmac_md5_hash,
+                        },
+                    }
+                ],
+            }
+
+            manifest_path = (
+                firmware_path.parent
+                / f"{firmware_path.name}.{update_name}.manifest.json"
+            )
+            with open(manifest_path, "w") as f:
+                json.dump(manifest, f, indent=2)
+            print(f"Generated manifest: {manifest_path}")
 
         # TODO: Future commit will create JSON manifest with OTA metadata here
 
