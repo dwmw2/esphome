@@ -11,10 +11,13 @@ from esphome.const import (
     PLATFORM_BK72XX,
     PLATFORM_ESP32,
     PLATFORM_HOST,
+    PLATFORM_LN882X,
+    PLATFORM_RP2040,
     PLATFORM_RTL87XX,
 )
 from esphome.core import CORE
 import esphome.final_validate as fv
+from esphome.helpers import IS_MACOS
 
 CODEOWNERS = ["@dwmw2"]
 
@@ -60,9 +63,16 @@ CONFIG_SCHEMA = cv.All(
     ),
 )
 
-# Support ESP32, LibreTiny (BK72XX, RTL87XX), and host platforms
+# Support ESP32, LibreTiny (BK72XX, RTL87XX, LN882X), RP2040, and host platforms
 # ESP8266 lwip_raw_tcp implementation doesn't support outbound connections (no connect/select)
-PLATFORMS = [PLATFORM_ESP32, PLATFORM_BK72XX, PLATFORM_RTL87XX, PLATFORM_HOST]
+PLATFORMS = [
+    PLATFORM_ESP32,
+    PLATFORM_BK72XX,
+    PLATFORM_RTL87XX,
+    PLATFORM_LN882X,
+    PLATFORM_RP2040,
+    PLATFORM_HOST,
+]
 
 
 def _final_validate(config):
@@ -92,11 +102,15 @@ async def to_code(config):
 
     # Add crypto library dependencies
     if CORE.is_host:
+        if IS_MACOS:
+            # macOS needs special handling for Homebrew OpenSSL
+            cg.add_build_flag("-I/opt/homebrew/opt/openssl/include")
+            cg.add_build_flag("-L/opt/homebrew/opt/openssl/lib")
         cg.add_build_flag("-lcrypto")
-        cg.add_build_flag("-lz")
     elif CORE.is_libretiny:
-        # Enable GCM support in LibreTiny's mbedtls
-        cg.add_build_flag("-DMBEDTLS_GCM_C")
+        # Enable GCM support in LibreTiny's mbedtls (except LN882X which already has it)
+        if not CORE.is_ln882x:
+            cg.add_build_flag("-DMBEDTLS_GCM_C")
 
     for conf in config:
         var = cg.new_Pvariable(conf[CONF_ID])
@@ -133,7 +147,7 @@ def FILTER_SOURCE_FILES() -> list[str]:
     # Determine which crypto implementation to use
     if CORE.is_host:
         crypto_impl = "tuyaAPI-crypto.cpp"
-    elif CORE.is_esp8266:
+    elif CORE.is_esp8266 or CORE.is_rp2040:
         crypto_impl = "tuyaAPI-bearssl.cpp"
     else:  # ESP32 (Arduino and ESP-IDF) and LibreTiny (both have mbedtls)
         crypto_impl = "tuyaAPI-mbedtls.cpp"
