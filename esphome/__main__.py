@@ -542,7 +542,6 @@ def _check_and_emit_buildinfo() -> None:
 
     prog_path = Path(idedata.raw["prog_path"])
 
-    firmware_path = CORE.firmware_bin
     buildinfo_json_path = CORE.relative_build_path("buildinfo.json")
 
     # Check if both files exist
@@ -580,9 +579,13 @@ def _check_and_emit_buildinfo() -> None:
         "Build Info: config_hash=0x%08x build_time=%s", config_hash, build_time
     )
 
-    # Calculate MD5 of firmware
-    with open(firmware_path, "rb") as f:
-        firmware_data = f.read()
+    # Read firmware data for hash calculation
+    try:
+        with open(prog_path, "rb") as f:
+            firmware_data = f.read()
+    except OSError as e:
+        _LOGGER.debug("Failed to read firmware for hashing: %s", e)
+        return
 
     # Look for hmac_key in update components and calculate HMAC for each
     hmac_results = []
@@ -633,7 +636,7 @@ def _check_and_emit_buildinfo() -> None:
             family = CORE.config.get("libretiny", {}).get("family", "")
             chip_family = FAMILY_FRIENDLY.get(family, family.upper())
 
-        ota_info = {"path": firmware_path.name}
+        ota_info = {"path": prog_path.name}
         if hmac_md5_hash is not None:
             ota_info["hmac_md5"] = hmac_md5_hash
             ota_info["hmac_sha256"] = hmac_sha256_hash
@@ -656,7 +659,7 @@ def _check_and_emit_buildinfo() -> None:
         }
 
         manifest_path = (
-            firmware_path.parent / f"{firmware_path.name}.{update_name}.manifest.json"
+            prog_path.parent / f"{prog_path.name}.{update_name}.manifest.json"
         )
         write_file(manifest_path, json.dumps(manifest, indent=2))
         _LOGGER.info("Generated manifest: %s", manifest_path)
