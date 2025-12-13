@@ -115,12 +115,18 @@ void HttpRequestUpdate::update_task(void *params) {
             return false;
           }
           JsonObject ota = build["ota"].as<JsonObject>();
-          if (!ota["path"].is<const char *>() || !ota["md5"].is<const char *>()) {
+          if (!ota["path"].is<const char *>() ||
+              (!ota["md5"].is<const char *>() && !ota["hmac_md5"].is<const char *>())) {
             ESP_LOGE(TAG, "Manifest does not contain required fields");
             return false;
           }
           this_update->update_info_.firmware_url = ota["path"].as<std::string>();
-          this_update->update_info_.md5 = ota["md5"].as<std::string>();
+          if (ota["md5"].is<const char *>()) {
+            this_update->update_info_.md5 = ota["md5"].as<std::string>();
+          }
+          if (ota["hmac_md5"].is<const char *>()) {
+            this_update->update_info_.hmac_md5 = ota["hmac_md5"].as<std::string>();
+          }
 
           if (ota["summary"].is<const char *>())
             this_update->update_info_.summary = ota["summary"].as<std::string>();
@@ -216,10 +222,27 @@ void HttpRequestUpdate::perform(bool force) {
     return;
   }
 
+  if (!this->update_info.hmac_md5.empty() && this->hmac_key_.empty()) {
+    ESP_LOGE(TAG, "Manifest contains hmac_md5 but no hmac_key configured");
+    this->status_set_error(LOG_STR("HMAC key required but not configured"));
+    return;
+  }
+
+  if (!this->hmac_key_.empty() && this->update_info.hmac_md5.empty()) {
+    ESP_LOGE(TAG, "HMAC key configured but manifest only contains plain md5");
+    this->status_set_error(LOG_STR("HMAC validation required but manifest not signed"));
+    return;
+  }
+
   this->state_ = update::UPDATE_STATE_INSTALLING;
   this->publish_state();
 
-  this->ota_parent_->set_md5(this->update_info.md5);
+  if (!this->update_info.hmac_md5.empty()) {
+    this->ota_parent_->set_hmac_md5(this->update_info.hmac_md5);
+    this->ota_parent_->set_hmac_key(this->hmac_key_);
+  } else {
+    this->ota_parent_->set_md5(this->update_info.md5);
+  }
   this->ota_parent_->set_url(this->update_info.firmware_url);
   // Flash in the next loop
   this->defer([this]() { this->ota_parent_->flash(); });
