@@ -594,6 +594,24 @@ def _check_and_emit_buildinfo() -> None:
         )
         version = project_version if project_version else __version__
 
+        # Determine chip family
+        # Note: Could alternatively parse ESPHOME_VARIANT from build/.esphome/build/<name>/src/esphome/core/defines.h
+        chip_family = "UNKNOWN"
+        if CORE.target_platform == "esp32":
+            from esphome.components.esp32.const import VARIANT_FRIENDLY
+
+            variant = CORE.config.get("esp32", {}).get("variant", "esp32")
+            chip_family = VARIANT_FRIENDLY.get(variant, variant.upper())
+        elif CORE.target_platform == "esp8266":
+            chip_family = "ESP8266"
+        elif CORE.target_platform == "rp2040":
+            chip_family = "RP2040"
+        elif CORE.is_libretiny:
+            from esphome.components.libretiny.const import FAMILY_FRIENDLY
+
+            family = CORE.config.get("libretiny", {}).get("family", "")
+            chip_family = FAMILY_FRIENDLY.get(family, family.upper())
+
         manifest = {
             "name": CORE.name,
             "version": version,
@@ -601,7 +619,7 @@ def _check_and_emit_buildinfo() -> None:
             "build_time": str(build_time),
             "builds": [
                 {
-                    "chipFamily": "ESP32-S3",  # TODO: Make this dynamic
+                    "chipFamily": chip_family,
                     "ota": {
                         "path": firmware_path.name,
                         "hmac_md5": hmac_md5_hash,
