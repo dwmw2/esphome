@@ -533,15 +533,32 @@ def _check_and_emit_buildinfo() -> None:
     import hmac
     import json
 
+    from esphome import platformio_api
+
+    idedata = platformio_api.get_idedata(CORE.config)
+    if not idedata:
+        _LOGGER.debug("Failed to get idedata")
+        return
+
+    prog_path = Path(idedata.raw["prog_path"])
+
     firmware_path = CORE.firmware_bin
     buildinfo_json_path = CORE.relative_build_path("buildinfo.json")
 
     # Check if both files exist
-    if not firmware_path.exists() or not buildinfo_json_path.exists():
+    # Note: This should never happen - if prog_path doesn't exist, the build failed
+    if not prog_path.exists() or not buildinfo_json_path.exists():
+        _LOGGER.info(
+            "Skipping manifest generation - prog_path: %s (exists: %s), buildinfo: %s (exists: %s)",
+            prog_path,
+            prog_path.exists(),
+            buildinfo_json_path,
+            buildinfo_json_path.exists(),
+        )
         return
 
-    # Check if firmware is newer than buildinfo (indicating a relink occurred)
-    if firmware_path.stat().st_mtime <= buildinfo_json_path.stat().st_mtime:
+    # Check if prog_path is newer than buildinfo (indicating a relink occurred)
+    if prog_path.stat().st_mtime <= buildinfo_json_path.stat().st_mtime:
         return
 
     # Read buildinfo from JSON
