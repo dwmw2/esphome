@@ -586,7 +586,11 @@ def _check_and_emit_buildinfo() -> None:
             ).hexdigest()
             hmac_results.append((update_name, hmac_md5_hash, hmac_sha256_hash))
 
-    # Generate manifest files for each update component
+    # If no HMAC keys found, still generate a manifest with buildinfo
+    if not hmac_results:
+        hmac_results.append((CORE.name, None, None))
+
+    # Generate manifest files for each update component (or default manifest)
     for update_name, hmac_md5_hash, hmac_sha256_hash in hmac_results:
         # Use same version logic as http_request_update.cpp
         project_version = (
@@ -612,6 +616,15 @@ def _check_and_emit_buildinfo() -> None:
             family = CORE.config.get("libretiny", {}).get("family", "")
             chip_family = FAMILY_FRIENDLY.get(family, family.upper())
 
+        ota_info = {"path": firmware_path.name}
+        if hmac_md5_hash is not None:
+            ota_info["hmac_md5"] = hmac_md5_hash
+            ota_info["hmac_sha256"] = hmac_sha256_hash
+        else:
+            # No HMAC key, use plain hashes
+            ota_info["md5"] = hashlib.md5(firmware_data).hexdigest()
+            ota_info["sha256"] = hashlib.sha256(firmware_data).hexdigest()
+
         manifest = {
             "name": CORE.name,
             "version": version,
@@ -620,11 +633,7 @@ def _check_and_emit_buildinfo() -> None:
             "builds": [
                 {
                     "chipFamily": chip_family,
-                    "ota": {
-                        "path": firmware_path.name,
-                        "hmac_md5": hmac_md5_hash,
-                        "hmac_sha256": hmac_sha256_hash,
-                    },
+                    "ota": ota_info,
                 }
             ],
         }
