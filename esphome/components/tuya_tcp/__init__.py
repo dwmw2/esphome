@@ -105,7 +105,7 @@ async def to_code(config):
             cg.add_build_flag("-L/opt/homebrew/opt/openssl/lib")
         cg.add_build_flag("-lcrypto")
     elif CORE.is_rp2040:
-        # The RP2040 Arduino core ships BearSSL; tuyapp_crypt.cpp provides
+        # The RP2040 Arduino core ships BearSSL; tuyapp_glue.cpp provides
         # the ciphers and hashes from it
         for primitive in ("AES_ECB", "AES_GCM", "HMAC_SHA256", "MD5"):
             cg.add_build_flag(f"-DUSE_EXTERNAL_{primitive}")
