@@ -90,7 +90,11 @@ FINAL_VALIDATE_SCHEMA = _final_validate
 
 
 async def to_code(config):
-    cg.add_library("tuyapp", None, "https://github.com/dwmw2/tuyapp.git#esphome-v1")
+    cg.add_library(
+        "tuyapp",
+        None,
+        "https://github.com/dwmw2/tuyapp.git#46511f84b7f68818951d9bf4abaef869c9b68b54",
+    )
 
     # Crypto backend: OpenSSL on host (the library's default), mbedtls
     # everywhere else
