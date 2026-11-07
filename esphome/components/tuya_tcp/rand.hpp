@@ -12,7 +12,7 @@
  *  @license GPL-3.0+ <https://github.com/gordonb3/tuyapp/blob/master/LICENSE>
  */
 
-#ifndef USE_MBEDTLS
+#if !defined(USE_MBEDTLS) && !defined(USE_BEARSSL)
 
 // select default encryption routines
 #define USE_OPENSSL
@@ -43,3 +43,15 @@ static void random_bytes(unsigned char *buffer, int len) {
 };  // namespace Tuya
 
 #endif  // USE_MBEDTLS
+
+#ifdef USE_BEARSSL
+
+// BearSSL has no system RNG; use the ESPHome platform one (vendored-copy
+// deviation, not for upstream)
+#include "esphome/core/helpers.h"
+
+namespace Tuya {
+static void random_bytes(unsigned char *buffer, int len) { esphome::random_bytes(buffer, (size_t) len); }
+};  // namespace Tuya
+
+#endif  // USE_BEARSSL

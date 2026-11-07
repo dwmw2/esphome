@@ -12,7 +12,7 @@
  *  @license GPL-3.0+ <https://github.com/gordonb3/tuyapp/blob/master/LICENSE>
  */
 
-#ifndef USE_MBEDTLS
+#if !defined(USE_MBEDTLS) && !defined(USE_BEARSSL)
 
 // select default encryption routines
 #define USE_OPENSSL
@@ -27,6 +27,11 @@
 #ifdef USE_MBEDTLS
 // must be included in global namespace
 #include <mbedtls/md.h>
+#endif
+
+#ifdef USE_BEARSSL
+// must be included in global namespace
+#include <bearssl/bearssl.h>
 #endif
 
 namespace Tuya {
@@ -53,5 +58,16 @@ static void md5_hash(const unsigned char *cInputBuffer, int inputSize, unsigned 
 }
 
 #endif  // USE_MBEDTLS
+
+#ifdef USE_BEARSSL
+
+static void md5_hash(const unsigned char *cInputBuffer, int inputSize, unsigned char *cOutputBuffer) {
+  br_md5_context ctx;
+  br_md5_init(&ctx);
+  br_md5_update(&ctx, cInputBuffer, inputSize);
+  br_md5_out(&ctx, cOutputBuffer);
+}
+
+#endif  // USE_BEARSSL
 
 };  // namespace Tuya

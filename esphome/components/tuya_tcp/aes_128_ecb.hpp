@@ -12,7 +12,7 @@
  *  @license GPL-3.0+ <https://github.com/gordonb3/tuyapp/blob/master/LICENSE>
  */
 
-#ifndef USE_MBEDTLS
+#if !defined(USE_MBEDTLS) && !defined(USE_BEARSSL)
 
 // select default encryption routines
 #define USE_OPENSSL
@@ -27,6 +27,12 @@
 #ifdef USE_MBEDTLS
 // must be included in global namespace
 #include "mbedtls/aes.h"
+#endif
+
+#ifdef USE_BEARSSL
+// must be included in global namespace
+#include <bearssl/bearssl.h>
+#include <cstring>
 #endif
 
 namespace Tuya {
@@ -100,7 +106,7 @@ static bool aes_128_ecb_encrypt(const unsigned char *cEncryptionKey, const unsig
   mbedtls_aes_setkey_enc(&aes, cEncryptionKey, 128);
   *outputSize = 0;
   for (int i = 0; i < (paddedInputSize >> 4); ++i) {
-    mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, cInputBuffer + (i << 4), &cOutputBuffer[(i << 4)]);
+    mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, cPaddedInput + (i << 4), &cOutputBuffer[(i << 4)]);
     *outputSize += 16;
   }
   mbedtls_aes_free(&aes);
@@ -113,6 +119,7 @@ static bool aes_128_ecb_decrypt(const unsigned char *cEncryptionKey, const unsig
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
   mbedtls_aes_setkey_dec(&aes, cEncryptionKey, 128);
+  *outputSize = 0;
   for (int i = 0; i < (inputSize >> 4); ++i) {
     mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, cInputBuffer + (i << 4), cOutputBuffer + (i << 4));
     *outputSize += 16;
@@ -130,5 +137,53 @@ static bool aes_128_ecb_decrypt(const unsigned char *cEncryptionKey, const unsig
 }
 
 #endif  // USE_MBEDTLS
+
+#ifdef USE_BEARSSL
+
+static bool aes_128_ecb_encrypt(const unsigned char *cEncryptionKey, const unsigned char *cInputBuffer, int inputSize,
+                                unsigned char *cOutputBuffer, int *outputSize) {
+  uint8_t padding = 16 - (inputSize % 16);
+  int paddedInputSize = inputSize + padding;
+
+  unsigned char cPaddedInput[paddedInputSize];
+  memcpy(cPaddedInput, cInputBuffer, inputSize);
+  memset(cPaddedInput + inputSize, padding, padding);
+
+  // BearSSL has no ECB interface; CBC over a single block with a zero IV is
+  // ECB of that block
+  br_aes_ct_cbcenc_keys ctx;
+  br_aes_ct_cbcenc_init(&ctx, cEncryptionKey, 16);
+  *outputSize = 0;
+  for (int i = 0; i < paddedInputSize; i += 16) {
+    unsigned char iv[16] = {0};
+    memcpy(cOutputBuffer + i, cPaddedInput + i, 16);
+    br_aes_ct_cbcenc_run(&ctx, iv, cOutputBuffer + i, 16);
+    *outputSize += 16;
+  }
+  return true;
+}
+
+static bool aes_128_ecb_decrypt(const unsigned char *cEncryptionKey, const unsigned char *cInputBuffer, int inputSize,
+                                unsigned char *cOutputBuffer, int *outputSize) {
+  br_aes_ct_cbcdec_keys ctx;
+  br_aes_ct_cbcdec_init(&ctx, cEncryptionKey, 16);
+  *outputSize = 0;
+  for (int i = 0; i < inputSize; i += 16) {
+    unsigned char iv[16] = {0};
+    memcpy(cOutputBuffer + i, cInputBuffer + i, 16);
+    br_aes_ct_cbcdec_run(&ctx, iv, cOutputBuffer + i, 16);
+    *outputSize += 16;
+  }
+
+  //  trim padding chars from decrypted payload
+  uint8_t padding = cOutputBuffer[inputSize - 1];
+  if (padding <= 16) {
+    cOutputBuffer[inputSize - padding] = 0;
+    *outputSize -= padding;
+  }
+  return true;
+}
+
+#endif  // USE_BEARSSL
 
 };  // namespace Tuya

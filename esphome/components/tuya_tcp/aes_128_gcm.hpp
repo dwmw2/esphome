@@ -12,7 +12,7 @@
  *  @license GPL-3.0+ <https://github.com/gordonb3/tuyapp/blob/master/LICENSE>
  */
 
-#ifndef USE_MBEDTLS
+#if !defined(USE_MBEDTLS) && !defined(USE_BEARSSL)
 
 // select default encryption routines
 #define USE_OPENSSL
@@ -27,6 +27,12 @@
 #ifdef USE_MBEDTLS
 // must be included in global namespace
 #include "mbedtls/gcm.h"
+#endif
+
+#ifdef USE_BEARSSL
+// must be included in global namespace
+#include <bearssl/bearssl.h>
+#include <cstring>
 #endif
 
 namespace Tuya {
@@ -132,5 +138,53 @@ static bool aes_128_gcm_decrypt(const unsigned char *cEncryptionKey, const unsig
 }
 
 #endif  // USE_MBEDTLS
+
+#ifdef USE_BEARSSL
+
+static bool aes_128_gcm_encrypt(const unsigned char *cEncryptionKey, const unsigned char *iv, int iv_len,
+                                const unsigned char *aad, int aad_len, const unsigned char *cInputBuffer, int inputSize,
+                                unsigned char *cOutputBuffer, int *outputSize, unsigned char *tag, int tag_len) {
+  br_aes_ct_ctr_keys aes_ctx;
+  br_gcm_context gcm_ctx;
+
+  br_aes_ct_ctr_init(&aes_ctx, cEncryptionKey, 16);
+  br_gcm_init(&gcm_ctx, &aes_ctx.vtable, br_ghash_ctmul32);
+
+  br_gcm_reset(&gcm_ctx, iv, iv_len);
+  br_gcm_aad_inject(&gcm_ctx, aad, aad_len);
+  br_gcm_flip(&gcm_ctx);
+  memcpy(cOutputBuffer, cInputBuffer, inputSize);
+  br_gcm_run(&gcm_ctx, 1, cOutputBuffer, inputSize);
+  br_gcm_get_tag(&gcm_ctx, tag);
+
+  *outputSize = inputSize;
+  return true;
+}
+
+static bool aes_128_gcm_decrypt(const unsigned char *cEncryptionKey, const unsigned char *iv, int iv_len,
+                                const unsigned char *aad, int aad_len, const unsigned char *cInputBuffer, int inputSize,
+                                const unsigned char *tag, int tag_len, unsigned char *cOutputBuffer, int *outputSize) {
+  br_aes_ct_ctr_keys aes_ctx;
+  br_gcm_context gcm_ctx;
+
+  br_aes_ct_ctr_init(&aes_ctx, cEncryptionKey, 16);
+  br_gcm_init(&gcm_ctx, &aes_ctx.vtable, br_ghash_ctmul32);
+
+  br_gcm_reset(&gcm_ctx, iv, iv_len);
+  br_gcm_aad_inject(&gcm_ctx, aad, aad_len);
+  br_gcm_flip(&gcm_ctx);
+  memcpy(cOutputBuffer, cInputBuffer, inputSize);
+  br_gcm_run(&gcm_ctx, 0, cOutputBuffer, inputSize);
+
+  unsigned char computed_tag[16];
+  br_gcm_get_tag(&gcm_ctx, computed_tag);
+  if (memcmp(tag, computed_tag, tag_len) != 0)
+    return false;
+
+  *outputSize = inputSize;
+  return true;
+}
+
+#endif  // USE_BEARSSL
 
 };  // namespace Tuya

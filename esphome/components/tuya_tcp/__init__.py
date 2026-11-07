@@ -11,6 +11,7 @@ from esphome.const import (
     PLATFORM_ESP32,
     PLATFORM_HOST,
     PLATFORM_LN882X,
+    PLATFORM_RP2040,
     PLATFORM_RTL87XX,
 )
 from esphome.core import CORE
@@ -61,13 +62,13 @@ CONFIG_SCHEMA = cv.All(
     ),
 )
 
-# RP2040 needs a bearssl backend in the vendored crypt modules before it can
-# join this list; ESP8266's lwip_raw_tcp cannot make outbound connections
+# ESP8266's lwip_raw_tcp cannot make outbound connections
 PLATFORMS = [
     PLATFORM_ESP32,
     PLATFORM_BK72XX,
     PLATFORM_RTL87XX,
     PLATFORM_LN882X,
+    PLATFORM_RP2040,
     PLATFORM_HOST,
 ]
 
@@ -97,6 +98,8 @@ async def to_code(config):
             cg.add_build_flag("-I/opt/homebrew/opt/openssl/include")
             cg.add_build_flag("-L/opt/homebrew/opt/openssl/lib")
         cg.add_build_flag("-lcrypto")
+    elif CORE.is_rp2040:
+        cg.add_build_flag("-DUSE_BEARSSL")
     else:
         cg.add_build_flag("-DUSE_MBEDTLS")
         # Enable GCM support in LibreTiny's mbedtls (except LN882X which has it)

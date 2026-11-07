@@ -12,7 +12,7 @@
  *  @license GPL-3.0+ <https://github.com/gordonb3/tuyapp/blob/master/LICENSE>
  */
 
-#ifndef USE_MBEDTLS
+#if !defined(USE_MBEDTLS) && !defined(USE_BEARSSL)
 
 // select default encryption routines
 #define USE_OPENSSL
@@ -27,6 +27,11 @@
 #ifdef USE_MBEDTLS
 // must be included in global namespace
 #include <mbedtls/md.h>
+#endif
+
+#ifdef USE_BEARSSL
+// must be included in global namespace
+#include <bearssl/bearssl.h>
 #endif
 
 namespace Tuya {
@@ -50,5 +55,20 @@ static void hmac_sha256(const unsigned char *cEncryptionKey, int keySize, const 
 }
 
 #endif  // USE_MBEDTLS
+
+#ifdef USE_BEARSSL
+
+static void hmac_sha256(const unsigned char *cEncryptionKey, int keySize, const unsigned char *cInputBuffer,
+                        int inputSize, unsigned char *cOutputBuffer) {
+  br_hmac_key_context kc;
+  br_hmac_context ctx;
+
+  br_hmac_key_init(&kc, &br_sha256_vtable, cEncryptionKey, keySize);
+  br_hmac_init(&ctx, &kc, 0);
+  br_hmac_update(&ctx, cInputBuffer, inputSize);
+  br_hmac_out(&ctx, cOutputBuffer);
+}
+
+#endif  // USE_BEARSSL
 
 };  // namespace Tuya
