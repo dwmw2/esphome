@@ -105,6 +105,10 @@ async def to_code(config):
         # Enable GCM support in LibreTiny's mbedtls (except LN882X which has it)
         if CORE.is_libretiny and not CORE.is_ln882x:
             cg.add_build_flag("-DMBEDTLS_GCM_C")
+    # Always use the ESPHome platform RNG, never the crypto library's: the
+    # vendored mbedtls rand module reads /dev/urandom, which embedded targets
+    # do not have, and BearSSL has no system RNG at all
+    cg.add_build_flag("-DUSE_ESPHOME_RANDOM")
 
     for conf in config:
         var = cg.new_Pvariable(conf[CONF_ID])
