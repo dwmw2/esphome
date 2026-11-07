@@ -114,7 +114,7 @@ async def to_code(config):
         # Enable GCM support in LibreTiny's mbedtls (except LN882X which has it)
         if CORE.is_libretiny and not CORE.is_ln882x:
             cg.add_build_flag("-DMBEDTLS_GCM_C")
-    # tuyapp_crypt.cpp provides the RNG (the library's rand module reads
+    # tuyapp_glue.cpp provides the RNG (the library's rand module reads
     # /dev/urandom, which embedded targets do not have) and CRC-32 (the
     # shared crc32 component: mask ROM on ESP32 instead of a 1 KiB table)
     cg.add_build_flag("-DUSE_EXTERNAL_RAND")
