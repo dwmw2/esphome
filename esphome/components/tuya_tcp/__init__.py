@@ -1,5 +1,6 @@
 import esphome.codegen as cg
 from esphome.components import tuya
+from esphome.config_helpers import filter_source_files_from_platform
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ADDRESS,
@@ -13,6 +14,7 @@ from esphome.const import (
     PLATFORM_LN882X,
     PLATFORM_RP2040,
     PLATFORM_RTL87XX,
+    PlatformFramework,
 )
 from esphome.core import CORE
 import esphome.final_validate as fv
@@ -154,3 +156,8 @@ async def to_code(config):
         cg.add(var.set_version(PROTOCOL_VERSIONS[version_str]))
 
         await tuya.register_tuya(var, conf)
+
+
+FILTER_SOURCE_FILES = filter_source_files_from_platform(
+    {"tuyapp_bearssl.cpp": {PlatformFramework.RP2_ARDUINO}}
+)

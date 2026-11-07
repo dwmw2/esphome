@@ -7,4 +7,8 @@ namespace esphome::tuya_tcp {
 /// their only user)
 void tuyapp_glue_anchor();
 
+/// Same for the BearSSL cipher and hash definitions on RP2040; called from
+/// tuyapp_glue_anchor()
+void tuyapp_bearssl_anchor();
+
 }  // namespace esphome::tuya_tcp
