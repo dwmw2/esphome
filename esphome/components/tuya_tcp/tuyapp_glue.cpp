@@ -1,4 +1,3 @@
-#include "tuyapp_glue.h"
 #include "tuyaTCP.hpp"
 #include "esphome/core/defines.h"
 #include "esphome/core/helpers.h"
@@ -8,16 +7,6 @@
 // to provide under its USE_EXTERNAL_* defines
 #include "crypt/rand.hpp"
 #include "crypt/crc32.hpp"
-
-namespace esphome::tuya_tcp {
-
-void tuyapp_glue_anchor() {
-#ifdef USE_RP2
-  tuyapp_bearssl_anchor();
-#endif
-}
-
-}  // namespace esphome::tuya_tcp
 
 namespace Tuya {
 

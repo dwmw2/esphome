@@ -941,6 +941,10 @@ def lint_relative_py_import(fname: Path, line, col, content):
         "esphome/components/esp32_hosted/esp_now_hosted_rpc.h",
         # C header shared with the vendored decoder
         "esphome/components/esphome/ota/ota_esphome_inflate.h",
+        # Definitions the tuyapp library expects in its own namespace Tuya,
+        # plus global-namespace tuyaTCP members, under USE_EXTERNAL_*
+        "esphome/components/tuya_tcp/tuyapp_glue.cpp",
+        "esphome/components/tuya_tcp/tuyapp_bearssl.cpp",
     ],
 )
 def lint_namespace(fname: Path, content: str) -> str | None:

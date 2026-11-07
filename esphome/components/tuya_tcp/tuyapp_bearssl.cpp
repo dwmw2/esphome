@@ -1,4 +1,3 @@
-#include "tuyapp_glue.h"
 #include "esphome/core/defines.h"
 
 #ifdef USE_RP2
@@ -14,12 +13,6 @@
 
 #include <bearssl/bearssl.h>
 #include <cstring>
-
-namespace esphome::tuya_tcp {
-
-void tuyapp_bearssl_anchor() {}
-
-}  // namespace esphome::tuya_tcp
 
 namespace Tuya {
 
