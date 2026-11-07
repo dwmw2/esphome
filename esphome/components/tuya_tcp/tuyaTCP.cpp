@@ -73,6 +73,16 @@
 
 #include "tuyaTCP.hpp"
 #include <unistd.h>
+// The built-in socket transport needs BSD sockets and poll(); on platforms
+// without them (embedded SDKs) only inert stubs are built, and a client
+// provides its own transport by overriding send() and feeding received
+// buffers to NegotiateSessionFinalize()/DecodeTuyaMessage().
+#if defined(WIN32) || !defined(__has_include) || (__has_include(<sys/socket.h>) && __has_include(<poll.h>))
+#define TUYA_TCP_HAVE_SOCKETS
+#endif
+
+#ifdef TUYA_TCP_HAVE_SOCKETS
+
 #include <cstring>
 #include <netdb.h>
 
@@ -362,3 +372,47 @@ void tuyaTCP::disconnect() {
   }
   return -1;
 }
+
+#else  // TUYA_TCP_HAVE_SOCKETS
+
+tuyaTCP::tuyaTCP() {
+  m_sockfd = -1;
+  m_lasterror = 0;
+  m_socketState = Tuya::TCP::Socket::DISCONNECTED;
+  m_asyncMode = false;
+}
+
+tuyaTCP::~tuyaTCP() {}
+
+void tuyaTCP::setAsyncMode(bool async) { m_asyncMode = async; }
+
+Tuya::TCP::Socket::value tuyaTCP::getSocketState() { return m_socketState; }
+
+bool tuyaTCP::isSocketWritable() { return false; }
+
+bool tuyaTCP::isSocketReadable() { return false; }
+
+bool tuyaTCP::setSessionReady() {
+  if (m_socketState == Tuya::TCP::Socket::CONNECTED) {
+    m_socketState = Tuya::TCP::Socket::READY;
+    return true;
+  }
+  return false;
+}
+
+bool tuyaTCP::isConnected() { return false; }
+
+bool tuyaTCP::ConnectToDevice(const std::string &hostname) {
+  m_socketState = Tuya::TCP::Socket::NO_SOCK_AVAIL;
+  return false;
+}
+
+int tuyaTCP::send(unsigned char *buffer, const int size) { return -1; }
+
+int tuyaTCP::receive(unsigned char *buffer, const int maxsize, const int minsize) { return -1; }
+
+int tuyaTCP::getlasterror() { return m_lasterror; }
+
+void tuyaTCP::disconnect() { m_socketState = Tuya::TCP::Socket::DISCONNECTED; }
+
+#endif  // TUYA_TCP_HAVE_SOCKETS
