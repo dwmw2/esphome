@@ -5,18 +5,9 @@
 #include "esphome/core/log.h"
 #include "esphome/components/network/util.h"
 
-#include "esphome/components/crc32/crc32.h"
+#include "tuyapp_crypt.h"
 
-// Definitions for the hooks the tuyapp library declares with USE_ESPHOME
-namespace Tuya {
-void random_bytes(unsigned char *buffer, int len) { esphome::random_bytes(buffer, (size_t) len); }
-unsigned long crc32(unsigned long crc, uint8_t const data[], uint32_t const len) {
-  return esphome::crc32::crc32((uint32_t) crc, data, len);
-}
-}  // namespace Tuya
-
-namespace esphome {
-namespace tuya_tcp {
+namespace esphome::tuya_tcp {
 
 ESPHOME_LOG_TAG(TAG, "tuya_tcp");
 
@@ -29,7 +20,12 @@ void TuyaTCP::setup() {
   // tuya_api_ is set via set_tuya_api() before setup() is called
   if (this->tuya_api_ == nullptr) {
     this->mark_failed();
+    return;
   }
+  // Nothing in the main program references the Tuya crypt primitives, only
+  // the tuyapp library archive does, so the linker would never extract their
+  // object. This call anchors tuyapp_crypt.cpp into the link.
+  tuyapp_crypt_anchor();
 }
 
 void TuyaTCP::loop() {
@@ -332,5 +328,4 @@ void TuyaTCP::inject_datapoint_(uint8_t id, tuya::TuyaDatapointType type, const 
   this->handle_datapoint_(datapoint);
 }
 
-}  // namespace tuya_tcp
-}  // namespace esphome
+}  // namespace esphome::tuya_tcp

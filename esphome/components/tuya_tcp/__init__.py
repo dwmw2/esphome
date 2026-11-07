@@ -93,7 +93,7 @@ async def to_code(config):
     cg.add_library(
         "tuyapp",
         None,
-        "https://github.com/dwmw2/tuyapp.git#46511f84b7f68818951d9bf4abaef869c9b68b54",
+        "https://github.com/dwmw2/tuyapp.git#d715b3da490f7a6b434a11a6f38e287c1d4db8e5",
     )
 
     # Crypto backend: OpenSSL on host (the library's default), mbedtls
@@ -104,18 +104,21 @@ async def to_code(config):
             cg.add_build_flag("-I/opt/homebrew/opt/openssl/include")
             cg.add_build_flag("-L/opt/homebrew/opt/openssl/lib")
         cg.add_build_flag("-lcrypto")
-    elif CORE.is_rp2040:  # needs a bearssl backend in tuyapp first
-        cg.add_build_flag("-DUSE_BEARSSL")
+    elif CORE.is_rp2040:
+        # The RP2040 Arduino core ships BearSSL; tuyapp_crypt.cpp provides
+        # the ciphers and hashes from it
+        for primitive in ("AES_ECB", "AES_GCM", "HMAC_SHA256", "MD5"):
+            cg.add_build_flag(f"-DUSE_EXTERNAL_{primitive}")
     else:
         cg.add_build_flag("-DUSE_MBEDTLS")
         # Enable GCM support in LibreTiny's mbedtls (except LN882X which has it)
         if CORE.is_libretiny and not CORE.is_ln882x:
             cg.add_build_flag("-DMBEDTLS_GCM_C")
-    # Have the library's crypt modules take random_bytes and crc32 from us
-    # (definitions in tuya_tcp.cpp): the platform RNG instead of a
-    # /dev/urandom read that embedded targets cannot satisfy, and the crc32
-    # component (mask ROM on ESP32 instead of a 1 KiB table)
-    cg.add_build_flag("-DUSE_ESPHOME")
+    # tuyapp_crypt.cpp provides the RNG (the library's rand module reads
+    # /dev/urandom, which embedded targets do not have) and CRC-32 (the
+    # shared crc32 component: mask ROM on ESP32 instead of a 1 KiB table)
+    cg.add_build_flag("-DUSE_EXTERNAL_RAND")
+    cg.add_build_flag("-DUSE_EXTERNAL_CRC32")
 
     for conf in config:
         var = cg.new_Pvariable(conf[CONF_ID])

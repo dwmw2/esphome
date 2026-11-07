@@ -5,8 +5,7 @@
 #include "esphome/components/async_tcp/async_tcp.h"
 #include "tuyaAPI.hpp"
 
-namespace esphome {
-namespace tuya_tcp {
+namespace esphome::tuya_tcp {
 
 enum class State : uint8_t {
   DISCONNECTED = 0,
@@ -74,5 +73,4 @@ template<typename API> int BridgedAPI<API>::send(unsigned char *buffer, const in
   return this->component_->transport_send(buffer, size);
 }
 
-}  // namespace tuya_tcp
-}  // namespace esphome
+}  // namespace esphome::tuya_tcp
