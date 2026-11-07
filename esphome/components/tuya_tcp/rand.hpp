@@ -19,7 +19,7 @@
 
 #endif
 
-#if defined(USE_OPENSSL) && !defined(USE_ESPHOME_RANDOM)
+#if defined(USE_OPENSSL) && !defined(USE_ESPHOME)
 
 #include <openssl/rand.h>
 
@@ -29,7 +29,7 @@ static void random_bytes(unsigned char *buffer, int len) { RAND_bytes(buffer, le
 
 #endif  // USE_OPENSSL
 
-#if defined(USE_MBEDTLS) && !defined(USE_ESPHOME_RANDOM)
+#if defined(USE_MBEDTLS) && !defined(USE_ESPHOME)
 
 #include <fstream>  // must be included in global namespace
 
@@ -44,7 +44,7 @@ static void random_bytes(unsigned char *buffer, int len) {
 
 #endif  // USE_MBEDTLS
 
-#ifdef USE_ESPHOME_RANDOM
+#ifdef USE_ESPHOME
 
 // Vendored-copy deviation: embedded targets have no /dev/urandom (the mbedtls
 // section would silently leave the buffer uninitialised) and BearSSL has no
@@ -55,4 +55,4 @@ namespace Tuya {
 static void random_bytes(unsigned char *buffer, int len) { esphome::random_bytes(buffer, (size_t) len); }
 };  // namespace Tuya
 
-#endif  // USE_ESPHOME_RANDOM
+#endif  // USE_ESPHOME

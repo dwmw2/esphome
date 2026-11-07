@@ -17,6 +17,19 @@
 
 #define Z_NULL 0
 
+#ifdef USE_ESPHOME
+// Vendored-copy deviation: use the ESPHome crc32 component (mask ROM on
+// ESP32, 64-byte table elsewhere) instead of carrying a 1 KiB table
+#include "esphome/components/crc32/crc32.h"
+
+namespace Tuya {
+static unsigned long crc32(unsigned long crc, uint8_t const data[], uint32_t const len) {
+  return esphome::crc32::crc32((uint32_t) crc, data, len);
+}
+};  // namespace Tuya
+
+#else  // USE_ESPHOME
+
 namespace Tuya {
 
 static const uint32_t crc_table[256] = {
@@ -58,5 +71,7 @@ static unsigned long crc32(unsigned long crc, uint8_t const data[], uint32_t con
 };
 
 };  // namespace Tuya
+
+#endif  // USE_ESPHOME
 
 #endif

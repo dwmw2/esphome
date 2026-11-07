@@ -22,7 +22,7 @@ CODEOWNERS = ["@dwmw2"]
 DOMAIN = "tuya_tcp"
 
 DEPENDENCIES = ["network"]
-AUTO_LOAD = ["async_tcp", "tuya"]
+AUTO_LOAD = ["async_tcp", "crc32", "tuya"]
 
 tuya_ns = cg.esphome_ns.namespace("tuya")
 Tuya = tuya_ns.class_("Tuya", cg.Component)
@@ -105,10 +105,11 @@ async def to_code(config):
         # Enable GCM support in LibreTiny's mbedtls (except LN882X which has it)
         if CORE.is_libretiny and not CORE.is_ln882x:
             cg.add_build_flag("-DMBEDTLS_GCM_C")
-    # Always use the ESPHome platform RNG, never the crypto library's: the
-    # vendored mbedtls rand module reads /dev/urandom, which embedded targets
-    # do not have, and BearSSL has no system RNG at all
-    cg.add_build_flag("-DUSE_ESPHOME_RANDOM")
+    # Have the vendored crypt modules prefer the ESPHome platform facilities:
+    # the platform RNG (the mbedtls rand module reads /dev/urandom, which
+    # embedded targets do not have, and BearSSL has no system RNG) and the
+    # crc32 component (mask ROM on ESP32 instead of a 1 KiB table)
+    cg.add_build_flag("-DUSE_ESPHOME")
 
     for conf in config:
         var = cg.new_Pvariable(conf[CONF_ID])
