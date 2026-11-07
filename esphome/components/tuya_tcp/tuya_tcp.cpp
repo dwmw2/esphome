@@ -5,6 +5,16 @@
 #include "esphome/core/log.h"
 #include "esphome/components/network/util.h"
 
+#include "esphome/components/crc32/crc32.h"
+
+// Definitions for the hooks the tuyapp library declares with USE_ESPHOME
+namespace Tuya {
+void random_bytes(unsigned char *buffer, int len) { esphome::random_bytes(buffer, (size_t) len); }
+unsigned long crc32(unsigned long crc, uint8_t const data[], uint32_t const len) {
+  return esphome::crc32::crc32((uint32_t) crc, data, len);
+}
+}  // namespace Tuya
+
 namespace esphome {
 namespace tuya_tcp {
 

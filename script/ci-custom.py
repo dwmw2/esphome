@@ -283,20 +283,7 @@ def lint_executable_bit(fname: Path) -> str | None:
     return None
 
 
-# Vendored tuyapp sources (https://github.com/gordonb3/tuyapp); third-party
-# code kept byte-identical with upstream, so exempt from in-tree style rules.
-VENDORED_TUYAPP = [
-    "esphome/components/tuya_tcp/tuyaAPI*",
-    "esphome/components/tuya_tcp/tuyaTCP.*",
-    "esphome/components/tuya_tcp/aes_128_*.hpp",
-    "esphome/components/tuya_tcp/crc32.hpp",
-    "esphome/components/tuya_tcp/hmac_sha256.hpp",
-    "esphome/components/tuya_tcp/md5.hpp",
-    "esphome/components/tuya_tcp/rand.hpp",
-]
-
-
-@lint_content_find_check("\t", only_first=True, exclude=VENDORED_TUYAPP)
+@lint_content_find_check("\t", only_first=True)
 def lint_tabs(fname, line, col, content):
     return "File contains tab character. Please convert tabs to spaces."
 
@@ -332,7 +319,6 @@ def highlight(s):
         # Shared C wire header (byte-identical with the co-processor firmware);
         # these are protocol constants and constexpr is C++-only.
         "esphome/components/esp32_hosted/esp_now_hosted_rpc.h",
-        *VENDORED_TUYAPP,
     ],
 )
 def lint_no_defines(fname, match):
@@ -955,7 +941,6 @@ def lint_relative_py_import(fname: Path, line, col, content):
         "esphome/components/esp32_hosted/esp_now_hosted_rpc.h",
         # C header shared with the vendored decoder
         "esphome/components/esphome/ota/ota_esphome_inflate.h",
-        *VENDORED_TUYAPP,
     ],
 )
 def lint_namespace(fname: Path, content: str) -> str | None:
@@ -1031,7 +1016,7 @@ lint_re_check(
 )(lint_inclusive_language)
 
 
-@lint_re_check(r"[\t\r\f\v ]+$", exclude=VENDORED_TUYAPP)
+@lint_re_check(r"[\t\r\f\v ]+$")
 def lint_trailing_whitespace(fname, match):
     return "Trailing whitespace detected"
 
@@ -1089,7 +1074,6 @@ HEAP_ALLOCATING_HELPERS = {
         "esphome/core/alloc_helpers.cpp",
         # Vendored third-party library
         "esphome/components/http_request/httplib.h",
-        *VENDORED_TUYAPP,
     ],
 )
 def lint_no_heap_allocating_helpers(fname, match):
@@ -1110,7 +1094,6 @@ def lint_no_heap_allocating_helpers(fname, match):
     # [^\w] ensures we don't match the safe variants
     r"[^\w](v?sprintf)\s*\(" + CPP_RE_EOL,
     include=cpp_include,
-    exclude=VENDORED_TUYAPP,
 )
 def lint_no_sprintf(fname, match):
     func = match.group(1)
@@ -1140,7 +1123,6 @@ def lint_no_sprintf(fname, match):
     exclude=[
         # Vendored library
         "esphome/components/http_request/httplib.h",
-        *VENDORED_TUYAPP,
         # Deprecated helpers that return std::string
         "esphome/core/alloc_helpers.cpp",
         # The using declaration itself

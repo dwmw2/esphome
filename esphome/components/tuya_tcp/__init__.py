@@ -90,25 +90,27 @@ FINAL_VALIDATE_SCHEMA = _final_validate
 
 
 async def to_code(config):
-    # Crypto backend: OpenSSL on host (the vendored crypt modules' default),
-    # mbedtls everywhere else
+    cg.add_library("tuyapp", None, "https://github.com/dwmw2/tuyapp.git#esphome-v1")
+
+    # Crypto backend: OpenSSL on host (the library's default), mbedtls
+    # everywhere else
     if CORE.is_host:
         if IS_MACOS:
             # macOS needs special handling for Homebrew OpenSSL
             cg.add_build_flag("-I/opt/homebrew/opt/openssl/include")
             cg.add_build_flag("-L/opt/homebrew/opt/openssl/lib")
         cg.add_build_flag("-lcrypto")
-    elif CORE.is_rp2040:
+    elif CORE.is_rp2040:  # needs a bearssl backend in tuyapp first
         cg.add_build_flag("-DUSE_BEARSSL")
     else:
         cg.add_build_flag("-DUSE_MBEDTLS")
         # Enable GCM support in LibreTiny's mbedtls (except LN882X which has it)
         if CORE.is_libretiny and not CORE.is_ln882x:
             cg.add_build_flag("-DMBEDTLS_GCM_C")
-    # Have the vendored crypt modules prefer the ESPHome platform facilities:
-    # the platform RNG (the mbedtls rand module reads /dev/urandom, which
-    # embedded targets do not have, and BearSSL has no system RNG) and the
-    # crc32 component (mask ROM on ESP32 instead of a 1 KiB table)
+    # Have the library's crypt modules take random_bytes and crc32 from us
+    # (definitions in tuya_tcp.cpp): the platform RNG instead of a
+    # /dev/urandom read that embedded targets cannot satisfy, and the crc32
+    # component (mask ROM on ESP32 instead of a 1 KiB table)
     cg.add_build_flag("-DUSE_ESPHOME")
 
     for conf in config:
@@ -131,11 +133,7 @@ async def to_code(config):
                     break
 
         protocol_class = f"tuyaAPI{version_str.replace('.', '')}"
-        cg.add_global(
-            cg.RawStatement(
-                f'#include "esphome/components/tuya_tcp/{protocol_class}.hpp"'
-            )
-        )
+        cg.add_global(cg.RawStatement(f'#include "{protocol_class}.hpp"'))
         cg.add(
             var.set_tuya_api(
                 cg.RawExpression(
