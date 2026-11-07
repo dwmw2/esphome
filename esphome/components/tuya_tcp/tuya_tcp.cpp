@@ -5,7 +5,7 @@
 #include "esphome/core/log.h"
 #include "esphome/components/network/util.h"
 
-#include "tuyapp_crypt.h"
+#include "tuyapp_glue.h"
 
 namespace esphome::tuya_tcp {
 
@@ -24,8 +24,8 @@ void TuyaTCP::setup() {
   }
   // Nothing in the main program references the Tuya crypt primitives, only
   // the tuyapp library archive does, so the linker would never extract their
-  // object. This call anchors tuyapp_crypt.cpp into the link.
-  tuyapp_crypt_anchor();
+  // object. This call anchors tuyapp_glue.cpp into the link.
+  tuyapp_glue_anchor();
 }
 
 void TuyaTCP::loop() {

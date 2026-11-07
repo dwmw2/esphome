@@ -1,4 +1,5 @@
-#include "tuyapp_crypt.h"
+#include "tuyapp_glue.h"
+#include "tuyaTCP.hpp"
 #include "esphome/core/defines.h"
 #include "esphome/core/helpers.h"
 #include "esphome/components/crc32/crc32.h"
@@ -19,7 +20,7 @@
 
 namespace esphome::tuya_tcp {
 
-void tuyapp_crypt_anchor() {}
+void tuyapp_glue_anchor() {}
 
 }  // namespace esphome::tuya_tcp
 
@@ -147,3 +148,28 @@ void md5_hash(const unsigned char *cInputBuffer, int inputSize, unsigned char *c
 #endif  // USE_RP2
 
 }  // namespace Tuya
+
+// With USE_EXTERNAL_TCP the library compiles none of its socket transport and
+// the application defines the tuyaTCP members the link needs. The component
+// talks to the device through AsyncClient: sends route through the virtual
+// send() override in BridgedAPI, so these base definitions only exist to
+// satisfy the vtable, the constructor, and the deprecated blocking
+// NegotiateSession() path, and none of them is ever meant to run.
+
+tuyaTCP::tuyaTCP() {
+  this->m_sockfd = -1;
+  this->m_lasterror = 0;
+  this->m_socketState = ::Tuya::TCP::Socket::DISCONNECTED;
+  this->m_asyncMode = false;
+}
+
+tuyaTCP::~tuyaTCP() {}
+
+bool tuyaTCP::ConnectToDevice(const std::string &hostname) {
+  this->m_socketState = ::Tuya::TCP::Socket::NO_SOCK_AVAIL;
+  return false;
+}
+
+int tuyaTCP::send(unsigned char *buffer, const int size) { return -1; }
+
+int tuyaTCP::receive(unsigned char *buffer, const int maxsize, const int minsize) { return -1; }

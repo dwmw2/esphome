@@ -93,7 +93,7 @@ async def to_code(config):
     cg.add_library(
         "tuyapp",
         None,
-        "https://github.com/dwmw2/tuyapp.git#d715b3da490f7a6b434a11a6f38e287c1d4db8e5",
+        "https://github.com/dwmw2/tuyapp.git#0c28168db111fe2a6c0aa229bb2eaddd4871f76d",
     )
 
     # Crypto backend: OpenSSL on host (the library's default), mbedtls
@@ -119,6 +119,9 @@ async def to_code(config):
     # shared crc32 component: mask ROM on ESP32 instead of a 1 KiB table)
     cg.add_build_flag("-DUSE_EXTERNAL_RAND")
     cg.add_build_flag("-DUSE_EXTERNAL_CRC32")
+    # The transport is our AsyncClient, not the library's sockets (which do
+    # not even compile on embedded SDKs); tuyapp_glue.cpp has the stubs
+    cg.add_build_flag("-DUSE_EXTERNAL_TCP")
 
     for conf in config:
         var = cg.new_Pvariable(conf[CONF_ID])
