@@ -68,6 +68,13 @@
 #include <string>
 #include <cstdint>
 
+namespace Tuya {
+namespace Session {
+enum value { INVALID, STARTING, FINALIZING, ESTABLISHED };  // enum value
+};  // namespace Session
+};  // namespace Tuya
+
+using namespace Tuya;
 class tuyaAPI : public tuyaTCP {
  public:
   enum class Protocol { v31, v33, v34, v35 };
@@ -75,49 +82,34 @@ class tuyaAPI : public tuyaTCP {
   virtual ~tuyaAPI() {}
 
   static tuyaAPI *create(const std::string &version);
-  static tuyaAPI *create(Protocol protocol);
 
-  // Get protocol version
   Protocol getProtocol() const { return m_protocol; }
+  Tuya::Session::value getSessionState() const { return m_sessionState; }
 
-  virtual void SetEncryptionKey(const std::string &key) { m_device_key = key; }
-  bool NegotiateSession(const std::string &local_key);
-  bool isSessionEstablished() const { return m_session_established; }
+  std::string GeneratePayload(const uint8_t command, const std::string &szDeviceID, const std::string &szDatapoints);
+  virtual int BuildTuyaMessage(unsigned char *cMessageBuffer, const uint8_t command, const std::string &payload,
+                               const std::string &encryption_key) = 0;
+  virtual std::string DecodeTuyaMessage(unsigned char *cMessageBuffer, const int buffersize,
+                                        const std::string &encryption_key) = 0;
 
-  std::string GeneratePayload(uint8_t &command, const std::string &szDeviceID, const std::string &szDatapoints);
-  virtual int BuildTuyaMessage(unsigned char *buffer, const uint8_t command, const std::string &payload,
-                               const std::string &encryption_key = "") = 0;
-  virtual std::string DecodeTuyaMessage(unsigned char *buffer, const int size,
-                                        const std::string &encryption_key = "") = 0;
+  virtual bool NegotiateSessionStart(const std::string &szEncryptionKey) {
+    m_sessionState = Tuya::Session::ESTABLISHED;
+    return true;
+  };
+  virtual bool NegotiateSessionFinalize(unsigned char *cMessageBuffer, const int size,
+                                        const std::string &szEncryptionKey) {
+    return true;
+  };
 
-  virtual int BuildSessionMessage(unsigned char *buffer) {
-    m_session_established = true;
-    return 0;
-  }
-  virtual std::string DecodeSessionMessage(unsigned char *buffer, const int size) { return ""; }
+  bool ConnectToDevice(const std::string &hostname) override;
 
-  //	virtual unsigned long crc32(unsigned long crc, uint8_t const data[], uint32_t const len) { return 0;};
-
-  // Crypto utility methods
-  int aes_128_ecb_encrypt(const unsigned char *key, const unsigned char *input, int input_len, unsigned char *output,
-                          int *output_len);
-  int aes_128_ecb_decrypt(const unsigned char *key, const unsigned char *input, int input_len, unsigned char *output,
-                          int *output_len);
-  int aes_128_gcm_encrypt(const unsigned char *key, const unsigned char *iv, int iv_len, const unsigned char *aad,
-                          int aad_len, const unsigned char *input, int input_len, unsigned char *output,
-                          int *output_len, unsigned char *tag, int tag_len);
-  int aes_128_gcm_decrypt(const unsigned char *key, const unsigned char *iv, int iv_len, const unsigned char *aad,
-                          int aad_len, const unsigned char *input, int input_len, const unsigned char *tag, int tag_len,
-                          unsigned char *output, int *output_len);
-  void hmac_sha256(const unsigned char *key, int key_len, const unsigned char *data, int data_len,
-                   unsigned char *output);
-  void md5_hash(const unsigned char *data, int data_len, unsigned char *output);
-  void random_bytes(unsigned char *buffer, int len);
+  // deprecated function - calls NegotiateSessionStart() and NegotiateSessionFinalize() in succession
+  virtual bool NegotiateSession(const std::string &szEncryptionKey) { return NegotiateSessionStart(szEncryptionKey); };
 
  protected:
   Protocol m_protocol;
-  std::string m_device_key;
-  bool m_session_established;
+  Tuya::Session::value m_sessionState;
+  uint32_t m_seqno;
 };
 
 #endif

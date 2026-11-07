@@ -1,134 +1,174 @@
 #include "tuya_tcp.h"
-#include "esphome/core/log.h"
+#include "esphome/core/application.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/helpers.h"
+#include "esphome/core/log.h"
 #include "esphome/components/network/util.h"
-#include "tuyaAPI34.hpp"
+
 namespace esphome {
 namespace tuya_tcp {
 
 ESPHOME_LOG_TAG(TAG, "tuya_tcp");
 
+static constexpr uint32_t RECONNECT_INTERVAL_MS = 10000;
+static constexpr uint32_t NEGOTIATION_TIMEOUT_MS = 5000;
+static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 10000;
+static constexpr size_t TX_BUFFER_SIZE = 1024;
+
 void TuyaTCP::setup() {
   // tuya_api_ is set via set_tuya_api() before setup() is called
-  if (!tuya_api_) {
-    ESP_LOGE(TAG, "Tuya API not initialized");
-    mark_failed();
+  if (this->tuya_api_ == nullptr) {
+    this->mark_failed();
   }
 }
 
 void TuyaTCP::loop() {
-// Same condition under which async_tcp.h selects the socket-based
-// AsyncClient implementation, which needs an explicit loop() call
 #if !defined(USE_ESP32) && !defined(USE_ESP8266) && !defined(USE_RP2) && !defined(USE_LIBRETINY)
-  if (client_)
-    client_->loop();
+  // The socket-based AsyncClient implementation needs an explicit loop() call
+  if (this->client_)
+    this->client_->loop();
 #endif
+  const uint32_t now = App.get_loop_component_start_time();
 
-  if (state_ == State::DISCONNECTED && network::is_connected()) {
-    uint32_t now = millis();
-    if (now - last_connect_attempt_ >= 10000) {
-      last_connect_attempt_ = now;
-      connect_();
+  switch (this->state_) {
+    case State::DISCONNECTED:
+      if (network::is_connected() && now - this->last_connect_attempt_ >= RECONNECT_INTERVAL_MS) {
+        this->last_connect_attempt_ = now;
+        this->connect_();
+      }
+      break;
+    case State::NEGOTIATING:
+      if (now - this->negotiation_start_ > NEGOTIATION_TIMEOUT_MS) {
+        ESP_LOGW(TAG, "Session negotiation timed out");
+        this->disconnect_();
+      }
+      break;
+    case State::CONNECTED:
+      if (now - this->last_rx_time_ > HEARTBEAT_INTERVAL_MS) {
+        this->last_rx_time_ = now;
+        ESP_LOGV(TAG, "Sending heartbeat");
+        this->send_message_(TUYA_HEART_BEAT, this->tuya_api_->GeneratePayload(TUYA_HEART_BEAT, this->device_id_, ""));
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+int TuyaTCP::transport_send(const unsigned char *buffer, int size) {
+  if (!this->client_ || !this->client_->connected())
+    return -1;
+  return (int) this->client_->write((const char *) buffer, size);
+}
+
+void TuyaTCP::connect_() {
+  this->client_ = std::make_unique<AsyncClient>();
+
+  this->client_->onConnect([this](void *arg, AsyncClient *c) {
+    ESP_LOGI(TAG, "Connected");
+    this->state_ = State::NEGOTIATING;
+    this->negotiation_start_ = App.get_loop_component_start_time();
+    // For 3.1/3.3 the base class marks the session established immediately;
+    // for 3.4/3.5 this builds and sends the first negotiation message through
+    // the BridgedAPI send() override
+    this->tuya_api_->NegotiateSessionStart(this->key_);
+    if (this->tuya_api_->getSessionState() == ::Tuya::Session::ESTABLISHED) {
+      this->session_established_();
     }
-  }
+  });
 
-  if (state_ == State::NEGOTIATING && millis() - negotiation_start_ > 5000) {
-    ESP_LOGW(TAG, "Negotiation timeout");
-    disconnect_();
-  }
+  this->client_->onDisconnect([this](void *arg, AsyncClient *c) {
+    ESP_LOGI(TAG, "Disconnected");
+    this->disconnect_();
+  });
 
-  if (state_ == State::CONNECTED && millis() - last_rx_time_ > 5000) {
-    send_heartbeat_();
+  this->client_->onError([this](void *arg, AsyncClient *c, int8_t error) {
+    ESP_LOGW(TAG, "Connection error: %d", error);
+    this->disconnect_();
+  });
+
+  this->client_->onData([this](void *arg, AsyncClient *c, void *data, size_t len) {
+    this->last_rx_time_ = App.get_loop_component_start_time();
+    if (this->state_ == State::NEGOTIATING) {
+      this->handle_negotiation_data_((const uint8_t *) data, len);
+    } else if (this->state_ == State::CONNECTED) {
+      this->handle_connected_data_((const uint8_t *) data, len);
+    }
+  });
+
+  ESP_LOGI(TAG, "Connecting to %s...", this->address_.c_str());
+  this->state_ = State::CONNECTING;
+  if (!this->client_->connect(this->address_.c_str(), TUYA_COMMAND_PORT)) {
+    ESP_LOGW(TAG, "Connect failed");
+    this->disconnect_();
   }
 }
 
 void TuyaTCP::disconnect_() {
-  if (client_) {
-    client_->close();
-    client_.reset();
+  if (this->client_) {
+    this->client_->close();
+    this->client_.reset();
   }
-  state_ = State::DISCONNECTED;
-  initial_query_sent_ = false;
+  this->state_ = State::DISCONNECTED;
+  this->initial_query_sent_ = false;
 }
 
-void TuyaTCP::start_negotiation_() { tuya_api_->SetEncryptionKey(key_); }
-
 void TuyaTCP::handle_negotiation_data_(const uint8_t *data, size_t len) {
-  tuya_api_->DecodeSessionMessage(const_cast<uint8_t *>(data), len);
-
-  if (tuya_api_->isSessionEstablished()) {
-    ESP_LOGI(TAG, "Negotiation complete");
-    state_ = State::CONNECTED;
-    initial_query_sent_ = false;
-    this->initialized_callback_.call();
-    send_initial_query_();
-    return;
+  this->tuya_api_->NegotiateSessionFinalize(const_cast<uint8_t *>(data), (int) len, this->key_);
+  if (this->tuya_api_->getSessionState() == ::Tuya::Session::ESTABLISHED) {
+    this->session_established_();
+  } else if (this->tuya_api_->getSessionState() == ::Tuya::Session::INVALID) {
+    ESP_LOGW(TAG, "Session negotiation failed");
+    this->disconnect_();
   }
+}
 
-  pending_send_.resize(1024);
-  int packet_size = tuya_api_->BuildSessionMessage(pending_send_.data());
-  if (packet_size < 0) {
-    ESP_LOGE(TAG, "Negotiation failed");
-    disconnect_();
-  } else if (packet_size > 0) {
-    pending_send_.resize(packet_size);
-    client_->write((const char *) pending_send_.data(), pending_send_.size());
-    pending_send_.clear();
-
-    if (tuya_api_->isSessionEstablished()) {
-      ESP_LOGI(TAG, "Negotiation complete");
-      state_ = State::CONNECTED;
-      initial_query_sent_ = false;
-      this->initialized_callback_.call();
-      send_initial_query_();
-    }
-  }
+void TuyaTCP::session_established_() {
+  ESP_LOGI(TAG, "Session established");
+  this->state_ = State::CONNECTED;
+  this->last_rx_time_ = App.get_loop_component_start_time();
+  this->initialized_callback_.call();
+  this->send_initial_query_();
 }
 
 void TuyaTCP::handle_connected_data_(const uint8_t *data, size_t len) {
-  std::string decoded = tuya_api_->DecodeTuyaMessage(const_cast<uint8_t *>(data), len);
+  std::string decoded = this->tuya_api_->DecodeTuyaMessage(const_cast<uint8_t *>(data), (int) len, this->key_);
   if (!decoded.empty()) {
-    ESP_LOGI(TAG, "Received: %s", decoded.c_str());
-    parse_json_message_(decoded);
+    ESP_LOGD(TAG, "Received: %s", decoded.c_str());
+    this->parse_json_message_(decoded);
   }
+}
+
+bool TuyaTCP::send_message_(uint8_t command, const std::string &payload) {
+  unsigned char buffer[TX_BUFFER_SIZE];
+  int len = this->tuya_api_->BuildTuyaMessage(buffer, command, payload, this->key_);
+  if (len <= 0) {
+    ESP_LOGW(TAG, "Failed to build message for command %u", command);
+    return false;
+  }
+  if (this->transport_send(buffer, len) < 0) {
+    ESP_LOGW(TAG, "Failed to send command %u", command);
+    return false;
+  }
+  return true;
 }
 
 void TuyaTCP::send_initial_query_() {
-  if (initial_query_sent_)
+  if (this->initial_query_sent_)
     return;
-
-  uint8_t command = TUYA_DP_QUERY;
-  std::string payload = tuya_api_->GeneratePayload(command, device_id_, "");
-  std::vector<uint8_t> message(1024);
-  int len = tuya_api_->BuildTuyaMessage(message.data(), command, payload);
-  if (len > 0) {
-    client_->write((const char *) message.data(), len);
+  uint8_t command = this->version_ >= tuyaAPI::Protocol::v35 ? TUYA_DP_QUERY_NEW : TUYA_DP_QUERY;
+  if (this->send_message_(command, this->tuya_api_->GeneratePayload(command, this->device_id_, ""))) {
     ESP_LOGI(TAG, "Sent DP query");
-    initial_query_sent_ = true;
+    this->initial_query_sent_ = true;
   }
 }
 
-void TuyaTCP::send_heartbeat_() {
-  if (state_ != State::CONNECTED || !client_)
-    return;
-
-  std::vector<uint8_t> message(1024);
-  int len = tuya_api_->BuildTuyaMessage(message.data(), TUYA_HEART_BEAT, "");
-  if (len > 0) {
-    client_->write((const char *) message.data(), len);
-    ESP_LOGV(TAG, "Sent heartbeat");
-    last_rx_time_ = millis();
-  }
-}
 void TuyaTCP::send_datapoint_command(uint8_t datapoint_id, tuya::TuyaDatapointType datapoint_type,
                                      std::vector<uint8_t> data) {
-  if (!client_ || state_ != State::CONNECTED) {
+  if (this->state_ != State::CONNECTED) {
     ESP_LOGW(TAG, "Cannot send command: not connected");
     return;
   }
-
-  char payload[512];
-  uint32_t now = time(nullptr);
 
   std::string dps_value;
   switch (datapoint_type) {
@@ -136,9 +176,9 @@ void TuyaTCP::send_datapoint_command(uint8_t datapoint_id, tuya::TuyaDatapointTy
       dps_value = data[0] ? "true" : "false";
       break;
     case tuya::TuyaDatapointType::INTEGER: {
-      uint32_t val = (data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3];
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%u", val);
+      uint32_t val = encode_uint32(data[0], data[1], data[2], data[3]);
+      char buf[UINT32_MAX_STR_SIZE];
+      uint32_to_str(buf, val);
       dps_value = buf;
       break;
     }
@@ -159,83 +199,21 @@ void TuyaTCP::send_datapoint_command(uint8_t datapoint_id, tuya::TuyaDatapointTy
       return;
   }
 
-  snprintf(payload, sizeof(payload), "{\"protocol\":5,\"t\":%u,\"data\":{\"dps\":{\"%d\":%s}}}", now, datapoint_id,
-           dps_value.c_str());
-
-  std::vector<uint8_t> message(1024);
-  int len = tuya_api_->BuildTuyaMessage(message.data(), TUYA_CONTROL_NEW, std::string(payload));
-  if (len > 0) {
-    client_->write((const char *) message.data(), len);
+  // GeneratePayload() wraps the bare datapoint map in the per-command envelope
+  char dps[128];
+  snprintf(dps, sizeof(dps), R"({"%d":%s})", datapoint_id, dps_value.c_str());
+  uint8_t command = this->version_ >= tuyaAPI::Protocol::v34 ? TUYA_CONTROL_NEW : TUYA_CONTROL;
+  if (this->send_message_(command, this->tuya_api_->GeneratePayload(command, this->device_id_, dps))) {
     ESP_LOGD(TAG, "Sent control command for DP %d", datapoint_id);
-  }
-}
-
-void TuyaTCP::connect_() {
-  client_ = std::make_unique<AsyncClient>();
-
-  client_->onConnect([this](void *arg, AsyncClient *c) {
-    ESP_LOGI(TAG, "Connected!");
-    start_negotiation_();
-
-    pending_send_.resize(1024);
-    int packet_size = tuya_api_->BuildSessionMessage(pending_send_.data());
-    if (packet_size < 0) {
-      ESP_LOGE(TAG, "Failed to build negotiation packet");
-      disconnect_();
-    } else if (packet_size == 0) {
-      ESP_LOGI(TAG, "No negotiation needed");
-      pending_send_.clear();
-      state_ = State::CONNECTED;
-      initial_query_sent_ = false;
-      last_rx_time_ = millis();
-      send_initial_query_();
-    } else {
-      pending_send_.resize(packet_size);
-      negotiation_start_ = millis();
-      state_ = State::NEGOTIATING;
-      c->write((const char *) pending_send_.data(), pending_send_.size());
-      pending_send_.clear();
-    }
-  });
-
-  client_->onDisconnect([this](void *arg, AsyncClient *c) {
-    ESP_LOGI(TAG, "Disconnected");
-    disconnect_();
-  });
-
-  client_->onError([this](void *arg, AsyncClient *c, int8_t error) {
-    ESP_LOGW(TAG, "Connection error: %d", error);
-    disconnect_();
-  });
-
-  client_->onData([this](void *arg, AsyncClient *c, void *data, size_t len) {
-    last_rx_time_ = millis();
-    if (state_ == State::NEGOTIATING) {
-      handle_negotiation_data_((const uint8_t *) data, len);
-    } else if (state_ == State::CONNECTED) {
-      handle_connected_data_((const uint8_t *) data, len);
-    }
-  });
-
-  if (address_.find(':') != std::string::npos) {
-    ESP_LOGI(TAG, "Connecting to [%s]:%d...", address_.c_str(), port_);
-  } else {
-    ESP_LOGI(TAG, "Connecting to %s:%d...", address_.c_str(), port_);
-  }
-  state_ = State::CONNECTING;
-  if (!client_->connect(address_.c_str(), port_)) {
-    ESP_LOGE(TAG, "Connect failed");
-    disconnect_();
   }
 }
 
 void TuyaTCP::dump_config() {
   ESP_LOGCONFIG(TAG, "Tuya TCP:");
-  ESP_LOGCONFIG(TAG, "  Address: %s", address_.c_str());
-  ESP_LOGCONFIG(TAG, "  Port: %d", (int) port_);
-  ESP_LOGCONFIG(TAG, "  Device ID: %s", device_id_.c_str());
+  ESP_LOGCONFIG(TAG, "  Address: %s", this->address_.c_str());
+  ESP_LOGCONFIG(TAG, "  Device ID: %s", this->device_id_.c_str());
   const char *version_str = "unknown";
-  switch (version_) {
+  switch (this->version_) {
     case tuyaAPI::Protocol::v31:
       version_str = "3.1";
       break;

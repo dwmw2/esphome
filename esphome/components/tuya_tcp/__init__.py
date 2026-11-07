@@ -6,13 +6,11 @@ from esphome.const import (
     CONF_DEVICE_ID,
     CONF_ID,
     CONF_KEY,
-    CONF_PORT,
     CONF_VERSION,
     PLATFORM_BK72XX,
     PLATFORM_ESP32,
     PLATFORM_HOST,
     PLATFORM_LN882X,
-    PLATFORM_RP2040,
     PLATFORM_RTL87XX,
 )
 from esphome.core import CORE
@@ -55,7 +53,6 @@ CONFIG_SCHEMA = cv.All(
             {
                 cv.GenerateID(): cv.declare_id(TuyaTCP),
                 cv.Required(CONF_ADDRESS): validate_address,
-                cv.Optional(CONF_PORT, default=6668): cv.port,
                 cv.Optional(CONF_DEVICE_ID): cv.string,
                 cv.Optional(CONF_KEY): cv.string,
                 cv.Optional(CONF_VERSION, default="3.3"): cv.enum(PROTOCOL_VERSIONS),
@@ -64,14 +61,13 @@ CONFIG_SCHEMA = cv.All(
     ),
 )
 
-# Support ESP32, LibreTiny (BK72XX, RTL87XX, LN882X), RP2040, and host platforms
-# ESP8266 lwip_raw_tcp implementation doesn't support outbound connections (no connect/select)
+# RP2040 needs a bearssl backend in the vendored crypt modules before it can
+# join this list; ESP8266's lwip_raw_tcp cannot make outbound connections
 PLATFORMS = [
     PLATFORM_ESP32,
     PLATFORM_BK72XX,
     PLATFORM_RTL87XX,
     PLATFORM_LN882X,
-    PLATFORM_RP2040,
     PLATFORM_HOST,
 ]
 
@@ -93,16 +89,18 @@ FINAL_VALIDATE_SCHEMA = _final_validate
 
 
 async def to_code(config):
-    # Add crypto library dependencies
+    # Crypto backend: OpenSSL on host (the vendored crypt modules' default),
+    # mbedtls everywhere else
     if CORE.is_host:
         if IS_MACOS:
             # macOS needs special handling for Homebrew OpenSSL
             cg.add_build_flag("-I/opt/homebrew/opt/openssl/include")
             cg.add_build_flag("-L/opt/homebrew/opt/openssl/lib")
         cg.add_build_flag("-lcrypto")
-    elif CORE.is_libretiny:
-        # Enable GCM support in LibreTiny's mbedtls (except LN882X which already has it)
-        if not CORE.is_ln882x:
+    else:
+        cg.add_build_flag("-DUSE_MBEDTLS")
+        # Enable GCM support in LibreTiny's mbedtls (except LN882X which has it)
+        if CORE.is_libretiny and not CORE.is_ln882x:
             cg.add_build_flag("-DMBEDTLS_GCM_C")
 
     for conf in config:
@@ -110,13 +108,12 @@ async def to_code(config):
         await cg.register_component(var, conf)
 
         cg.add(var.set_address(str(conf[CONF_ADDRESS])))
-        cg.add(var.set_port(conf[CONF_PORT]))
         if CONF_DEVICE_ID in conf:
             cg.add(var.set_device_id(conf[CONF_DEVICE_ID]))
         if CONF_KEY in conf:
             cg.add(var.set_key(conf[CONF_KEY]))
 
-        # Emit direct protocol class instantiation instead of using factory
+        # Emit direct protocol class instantiation instead of using the factory
         version_str = conf.get(CONF_VERSION, "3.3")
         if not isinstance(version_str, str):
             # It's a Protocol enum, find the string
@@ -131,27 +128,13 @@ async def to_code(config):
                 f'#include "esphome/components/tuya_tcp/{protocol_class}.hpp"'
             )
         )
-        cg.add(var.set_tuya_api(cg.RawExpression(f"new {protocol_class}()")))
+        cg.add(
+            var.set_tuya_api(
+                cg.RawExpression(
+                    f"new esphome::tuya_tcp::BridgedAPI<{protocol_class}>({conf[CONF_ID]})"
+                )
+            )
+        )
         cg.add(var.set_version(PROTOCOL_VERSIONS[version_str]))
 
         await tuya.register_tuya(var, conf)
-
-
-def FILTER_SOURCE_FILES() -> list[str]:
-    # Determine which crypto implementation to use
-    if CORE.is_host:
-        crypto_impl = "tuyaAPI-crypto.cpp"
-    elif CORE.is_esp8266 or CORE.is_rp2040:
-        crypto_impl = "tuyaAPI-bearssl.cpp"
-    else:  # ESP32 (Arduino and ESP-IDF) and LibreTiny (both have mbedtls)
-        crypto_impl = "tuyaAPI-mbedtls.cpp"
-
-    # Return list of implementations to exclude
-    all_impls = [
-        "tuyaAPI-crypto.cpp",
-        "tuyaAPI-mbedtls.cpp",
-        "tuyaAPI-bearssl.cpp",
-        "tuyaAPI-arduino.cpp",
-    ]
-    all_impls.remove(crypto_impl)
-    return all_impls

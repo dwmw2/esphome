@@ -287,8 +287,12 @@ def lint_executable_bit(fname: Path) -> str | None:
 # code kept byte-identical with upstream, so exempt from in-tree style rules.
 VENDORED_TUYAPP = [
     "esphome/components/tuya_tcp/tuyaAPI*",
-    "esphome/components/tuya_tcp/tuyaTCP.hpp",
+    "esphome/components/tuya_tcp/tuyaTCP.*",
+    "esphome/components/tuya_tcp/aes_128_*.hpp",
     "esphome/components/tuya_tcp/crc32.hpp",
+    "esphome/components/tuya_tcp/hmac_sha256.hpp",
+    "esphome/components/tuya_tcp/md5.hpp",
+    "esphome/components/tuya_tcp/rand.hpp",
 ]
 
 

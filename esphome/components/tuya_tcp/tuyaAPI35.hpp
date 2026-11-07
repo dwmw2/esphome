@@ -28,21 +28,23 @@ class tuyaAPI35 : public tuyaAPI {
    ************************************************************************/
   tuyaAPI35();
 
-  void SetEncryptionKey(const std::string &key) override;
-  int BuildTuyaMessage(unsigned char *buffer, const uint8_t command, const std::string &payload,
-                       const std::string &encryption_key = "") override;
-  std::string DecodeTuyaMessage(unsigned char *buffer, const int size, const std::string &encryption_key = "") override;
+  int BuildTuyaMessage(unsigned char *cMessageBuffer, const uint8_t command, const std::string &payload,
+                       const std::string &szEncryptionKey) override;
+  std::string DecodeTuyaMessage(unsigned char *cMessageBuffer, const int size,
+                                const std::string &encryption_key) override;
 
-  int BuildSessionMessage(unsigned char *buffer) override;
-  std::string DecodeSessionMessage(unsigned char *buffer, const int size) override;
+  bool NegotiateSessionStart(const std::string &szEncryptionKey) override;
+  bool NegotiateSessionFinalize(unsigned char *cMessageBuffer, const int buffersize,
+                                const std::string &szEncryptionKey) override;
+
+  // deprecated blocking mode only function - calls NegotiateSessionStart() and NegotiateSessionFinalize() in succession
+  bool NegotiateSession(const std::string &local_key) override;
 
  private:
   unsigned char m_session_key[16];
   unsigned char m_local_nonce[16];
   unsigned char m_remote_nonce[16];
   uint32_t m_seqno;
-
-  int BuildMessage35(unsigned char *buffer, uint32_t command, const std::string &payload, const unsigned char *key,
-                     const unsigned char *iv);
 };
+
 #endif  // _tuyaAPI35

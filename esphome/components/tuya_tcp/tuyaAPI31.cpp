@@ -1,13 +1,21 @@
 /*
- *	Client interface for local Tuya device access
+ *  Client interface for local Tuya device access
  *
- *	Copyright 2022-2024 - gordonb3 https://github.com/gordonb3/tuyapp
+ *  API 3.1 module
  *
- *	Licensed under GNU General Public License 3.0 or later.
- *	Some rights reserved. See COPYING, AUTHORS.
+ *  Note: this module is likely disfunctional. Code includes AES encryption
+ *        for sending, but no decrypt routine for received messages.
  *
- *	@license GPL-3.0+ <https://github.com/gordonb3/tuyapp/blob/master/LICENSE>
+ *
+ *  Copyright 2022-2026 - gordonb3 https://github.com/gordonb3/tuyapp
+ *
+ *  Licensed under GNU General Public License 3.0 or later.
+ *  Some rights reserved. See COPYING, AUTHORS.
+ *
+ *  @license GPL-3.0+ <https://github.com/gordonb3/tuyapp/blob/master/LICENSE>
  */
+
+#ifndef WITHOUT_API31
 
 #define PROTOCOL_31_HEADER_SIZE 16
 #define MESSAGE_PREFIX 0x000055aa
@@ -17,7 +25,9 @@
 #include "tuyaAPI31.hpp"
 #include <iomanip>
 #include <cstring>
-#include "crc32.hpp"  // Flattened from tuyapp crypt/crc32.hpp: ESPHome components cannot ship subdirectories
+#include "crc32.hpp"
+#include "aes_128_ecb.hpp"
+#include "md5.hpp"
 
 #ifdef DEBUG
 #include <iostream>
@@ -28,38 +38,37 @@ tuyaAPI31::tuyaAPI31() {
   m_seqno = 0;
 }
 
-int tuyaAPI31::BuildTuyaMessage(unsigned char *buffer, const uint8_t command, const std::string &szPayload,
-                                const std::string &encryption_key) {
-  const std::string &key = encryption_key.empty() ? m_device_key : encryption_key;
-
+int tuyaAPI31::BuildTuyaMessage(unsigned char *cMessageBuffer, const uint8_t command, const std::string &szPayload,
+                                const std::string &szEncryptionKey) {
   int bufferpos = 0;
-  memset(buffer, 0, PROTOCOL_31_HEADER_SIZE);
+  memset(cMessageBuffer, 0, PROTOCOL_31_HEADER_SIZE);
   // set message prefix
-  buffer[0] = (MESSAGE_PREFIX & 0xFF000000) >> 24;
-  buffer[1] = (MESSAGE_PREFIX & 0x00FF0000) >> 16;
-  buffer[2] = (MESSAGE_PREFIX & 0x0000FF00) >> 8;
-  buffer[3] = (MESSAGE_PREFIX & 0x000000FF);
+  cMessageBuffer[0] = (MESSAGE_PREFIX & 0xFF000000) >> 24;
+  cMessageBuffer[1] = (MESSAGE_PREFIX & 0x00FF0000) >> 16;
+  cMessageBuffer[2] = (MESSAGE_PREFIX & 0x0000FF00) >> 8;
+  cMessageBuffer[3] = (MESSAGE_PREFIX & 0x000000FF);
 
   // set message sequence number
   m_seqno++;
-  buffer[4] = (m_seqno & 0xFF000000) >> 24;
-  buffer[5] = (m_seqno & 0x00FF0000) >> 16;
-  buffer[6] = (m_seqno & 0x0000FF00) >> 8;
-  buffer[7] = (m_seqno & 0x000000FF);
+  cMessageBuffer[4] = (m_seqno & 0xFF000000) >> 24;
+  cMessageBuffer[5] = (m_seqno & 0x00FF0000) >> 16;
+  cMessageBuffer[6] = (m_seqno & 0x0000FF00) >> 8;
+  cMessageBuffer[7] = (m_seqno & 0x000000FF);
 
-  // set command code at int32 @buffer[8] (single byte value @buffer[11])
-  buffer[11] = command;
+  // set command code at int32 @cMessageBuffer[8] (single byte value @cMessageBuffer[11])
+  cMessageBuffer[11] = command;
   bufferpos += (int) PROTOCOL_31_HEADER_SIZE;
 
   int payloadSize = (int) szPayload.length();
-  if (!key.empty()) {
-    unsigned char *cEncryptedPayload = &buffer[bufferpos];
+  if (!szEncryptionKey.empty()) {
+    unsigned char *cEncryptedPayload = &cMessageBuffer[bufferpos];
     memset(cEncryptedPayload, 0, payloadSize + 16);
     int encryptedSize = 0;
-
-    if (aes_128_ecb_encrypt((unsigned char *) key.c_str(), (unsigned char *) szPayload.c_str(), payloadSize,
-                            cEncryptedPayload, &encryptedSize) != 0)
+    if (!aes_128_ecb_encrypt((unsigned char *) szEncryptionKey.c_str(), (unsigned char *) szPayload.c_str(),
+                             payloadSize, cEncryptedPayload, &encryptedSize)) {
+      // encryption failure
       return -1;
+    }
 
     unsigned char cBase64Payload[200];
     payloadSize = encode_base64((unsigned char *) cEncryptedPayload, encryptedSize, &cBase64Payload[0]);
@@ -68,14 +77,14 @@ int tuyaAPI31::BuildTuyaMessage(unsigned char *buffer, const uint8_t command, co
     std::string premd5 = "data=";
     premd5.append((char *) cBase64Payload);
     premd5.append("||lpv=3.1||");
-    premd5.append(key);
+    premd5.append(szEncryptionKey);
     std::string md5str = make_md5_digest(premd5);
     std::string md5mid = (char *) &md5str[8];
     std::string header = "3.1";
     header.append(md5mid);
-    bcopy(header.c_str(), &buffer[bufferpos], header.length());
+    bcopy(header.c_str(), &cMessageBuffer[bufferpos], header.length());
     bufferpos += header.length();
-    cEncryptedPayload = &buffer[bufferpos];
+    cEncryptedPayload = &cMessageBuffer[bufferpos];
     strcpy((char *) cEncryptedPayload, (char *) cBase64Payload);
     bufferpos += payloadSize;
 
@@ -86,21 +95,21 @@ int tuyaAPI31::BuildTuyaMessage(unsigned char *buffer, const uint8_t command, co
     std::cout << "\n";
 #endif
   } else {
-    unsigned char *cPayload = &buffer[bufferpos];
+    unsigned char *cPayload = &cMessageBuffer[bufferpos];
     memcpy((void *) cPayload, (void *) szPayload.c_str(), payloadSize + 1);
     bufferpos += payloadSize;
   }
 
-  unsigned char *cMessageTrailer = &buffer[bufferpos];
+  unsigned char *cMessageTrailer = &cMessageBuffer[bufferpos];
 
-  // update message size in int32 @buffer[12]
+  // update message size in int32 @cMessageBuffer[12]
   int buffersize = bufferpos + MESSAGE_TRAILER_SIZE;
-  buffer[14] = ((buffersize - PROTOCOL_31_HEADER_SIZE) & 0x0000FF00) >> 8;
-  buffer[15] = (buffersize - PROTOCOL_31_HEADER_SIZE) & 0x000000FF;
+  cMessageBuffer[14] = ((buffersize - PROTOCOL_31_HEADER_SIZE) & 0x0000FF00) >> 8;
+  cMessageBuffer[15] = (buffersize - PROTOCOL_31_HEADER_SIZE) & 0x000000FF;
 
   // calculate CRC
   unsigned long crc = crc32(0L, Z_NULL, 0);
-  crc = crc32(crc, buffer, bufferpos) & 0xFFFFFFFF;
+  crc = crc32(crc, cMessageBuffer, bufferpos) & 0xFFFFFFFF;
 
   // fill the message trailer
   cMessageTrailer[0] = (crc & 0xFF000000) >> 24;
@@ -116,20 +125,21 @@ int tuyaAPI31::BuildTuyaMessage(unsigned char *buffer, const uint8_t command, co
 #ifdef DEBUG
   std::cout << "dbg: complete message: ";
   for (int i = 0; i < (int) (buffersize); ++i)
-    printf("%.2x", (uint8_t) buffer[i]);
+    printf("%.2x", (uint8_t) cMessageBuffer[i]);
   std::cout << "\n";
 #endif
 
   return buffersize;
 }
 
-std::string tuyaAPI31::DecodeTuyaMessage(unsigned char *buffer, const int size, const std::string &encryption_key) {
+std::string tuyaAPI31::DecodeTuyaMessage(unsigned char *cMessageBuffer, const int size,
+                                         const std::string &szEncryptionKey) {
   std::string result;
 
   int bufferpos = 0;
 
   while (bufferpos < size) {
-    unsigned char *cTuyaResponse = &buffer[bufferpos];
+    unsigned char *cTuyaResponse = &cMessageBuffer[bufferpos];
     int messageSize =
         (int) ((uint8_t) cTuyaResponse[15] + ((uint8_t) cTuyaResponse[14] << 8) + PROTOCOL_31_HEADER_SIZE);
     int retcode = (int) ((uint8_t) cTuyaResponse[19] + ((uint8_t) cTuyaResponse[18] << 8));
@@ -227,8 +237,10 @@ std::string tuyaAPI31::DecodeTuyaMessage(unsigned char *buffer, const int size, 
   md5_hash((unsigned char *) str.c_str(), str.size(), hash);
 
   std::stringstream ss;
-  for (int i = 0; i < 16; i++) {
+  for (unsigned int i = 0; i < 16; i++) {
     ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
   }
   return ss.str();
 }
+
+#endif  // WITHOUT_API31
